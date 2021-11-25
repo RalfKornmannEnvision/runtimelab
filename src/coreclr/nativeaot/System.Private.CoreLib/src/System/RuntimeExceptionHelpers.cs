@@ -1,13 +1,11 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Threading;
+
 using Internal.DeveloperExperience;
 using Internal.Runtime.Augments;
 
@@ -42,7 +40,7 @@ namespace System
         // needs to throw an exception back to a method in a non-runtime module. The classlib is expected
         // to convert every code in the ExceptionIDs enum to an exception object.
         [RuntimeExport("GetRuntimeException")]
-        public static Exception GetRuntimeException(ExceptionIDs id)
+        public static Exception? GetRuntimeException(ExceptionIDs id)
         {
             if (!SafeToPerformRichExceptionSupport)
                 return null;
@@ -164,7 +162,7 @@ namespace System
         }
 
         [DoesNotReturn]
-        public static unsafe void FailFast(string message, Exception exception)
+        public static unsafe void FailFast(string message, Exception? exception)
         {
             FailFast(message, exception, RhFailFastReason.Unknown, IntPtr.Zero, IntPtr.Zero);
         }
@@ -194,7 +192,7 @@ namespace System
         // needs to cause the process to exit. It is the classlib's opprotunity to customize the
         // termination behavior in whatever way necessary.
         [RuntimeExport("FailFast")]
-        public static void RuntimeFailFast(RhFailFastReason reason, Exception exception, IntPtr pExAddress, IntPtr pExContext)
+        public static void RuntimeFailFast(RhFailFastReason reason, Exception? exception, IntPtr pExAddress, IntPtr pExContext)
         {
             if (!SafeToPerformRichExceptionSupport)
                 return;
@@ -232,7 +230,7 @@ namespace System
         }
 
         [DoesNotReturn]
-        internal static void FailFast(string message, Exception exception, RhFailFastReason reason, IntPtr pExAddress, IntPtr pExContext)
+        internal static void FailFast(string message, Exception? exception, RhFailFastReason reason, IntPtr pExAddress, IntPtr pExContext)
         {
             // If this a recursive call to FailFast, avoid all unnecessary and complex activity the second time around to avoid the recursion
             // that got us here the first time (Some judgement is required as to what activity is "unnecessary and complex".)
@@ -241,10 +239,23 @@ namespace System
 
             if (!minimalFailFast)
             {
-                string output = (exception != null) ?
-                    "Unhandled Exception: " + exception.ToString()
-                    : message;
-                DeveloperExperience.WriteLine(output);
+                string prefix;
+                string outputMessage;
+                if (exception != null)
+                {
+                    prefix = "Unhandled Exception: ";
+                    outputMessage = exception.ToString();
+                }
+                else
+                {
+                    prefix = "Process terminated. ";
+                    outputMessage = message;
+                }
+
+                Internal.Console.Error.Write(prefix);
+                if (outputMessage != null)
+                    Internal.Console.Error.Write(outputMessage);
+                Internal.Console.Error.Write(Environment.NewLine);
 
 #if FEATURE_DUMP_DEBUGGING
                 GenerateExceptionInformationForDump(exception, IntPtr.Zero);

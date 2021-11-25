@@ -19,7 +19,7 @@ You can put multiple `<Assembly>` tags inside the `<Application>` directive to c
 
 ## Assembly directive
 
-There 3 forms how assembly can be configured
+There are 3 forms how assembly can be configured
 - Module metadata only;
 - All types;
 - Module metadata and selected types.
@@ -77,8 +77,8 @@ System.String[][]
 System.String[,]
 // List<int>
 System.Collections.Generic.List`1[[System.Int32,System.Private.CoreLib]]
-// Dictionary<int, string>.KeyCollection
-System.Collections.Generic.Dictionary`2[[System.Int32,System.Private.CoreLib],[System.String,System.Private.CoreLib]]+KeyCollection
+// Dictionary<int, string>.KeyCollection - notice all the generic arguments go to the nested type
+System.Collections.Generic.Dictionary`2+KeyCollection[[System.Int32,System.Private.CoreLib],[System.String,System.Private.CoreLib]]
 ```
 
 Note that it likely does not make sense to have generic type to be placed here, since code generated over specific instantiation of the generic type.

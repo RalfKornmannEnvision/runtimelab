@@ -1022,7 +1022,7 @@ bool Compiler::fgDumpFlowGraph(Phases phase, PhasePosition pos)
 
                     if (validWeights)
                     {
-                        BasicBlock::weight_t edgeWeight = (edge->edgeWeightMin() + edge->edgeWeightMax()) / 2;
+                        weight_t edgeWeight = (edge->edgeWeightMin() + edge->edgeWeightMax()) / 2;
                         fprintf(fgxFile, "%slabel=\"%7.2f\"", sep, (double)edgeWeight / weightDivisor);
                     }
 
@@ -1047,7 +1047,7 @@ bool Compiler::fgDumpFlowGraph(Phases phase, PhasePosition pos)
                     }
                     if (validWeights)
                     {
-                        BasicBlock::weight_t edgeWeight = (edge->edgeWeightMin() + edge->edgeWeightMax()) / 2;
+                        weight_t edgeWeight = (edge->edgeWeightMin() + edge->edgeWeightMax()) / 2;
                         fprintf(fgxFile, "\n            weight=");
                         fprintfDouble(fgxFile, ((double)edgeWeight) / weightDivisor);
 
@@ -1632,7 +1632,7 @@ bool Compiler::fgDumpFlowGraph(Phases phase, PhasePosition pos)
                 }
             }
 
-            // Add regions for the loops. Note that loops are assumed to be contiguous from `lpFirst` to `lpBottom`.
+            // Add regions for the loops. Note that loops are assumed to be contiguous from `lpTop` to `lpBottom`.
 
             if (includeLoops)
             {
@@ -1645,7 +1645,7 @@ bool Compiler::fgDumpFlowGraph(Phases phase, PhasePosition pos)
                         continue;
                     }
                     sprintf_s(name, sizeof(name), FMT_LP, loopNum);
-                    rgnGraph.Insert(name, RegionGraph::RegionType::Loop, loop.lpFirst, loop.lpBottom);
+                    rgnGraph.Insert(name, RegionGraph::RegionType::Loop, loop.lpTop, loop.lpBottom);
                 }
             }
 
@@ -1801,7 +1801,7 @@ void Compiler::fgTableDispBasicBlock(BasicBlock* block, int ibcColWidth /* = 0 *
     }
     else
     {
-        BasicBlock::weight_t weight = block->getBBWeight(this);
+        weight_t weight = block->getBBWeight(this);
 
         if (weight > 99999) // Is it going to be more than 6 characters?
         {
@@ -1813,7 +1813,7 @@ void Compiler::fgTableDispBasicBlock(BasicBlock* block, int ibcColWidth /* = 0 *
             else // print weight in terms of k (i.e. 156k )
             {
                 // print weight in this format dddddk
-                BasicBlock::weight_t weightK = weight / 1000;
+                weight_t weightK = weight / 1000;
                 printf("%5uk", (unsigned)FloatingPointUtils::round(weightK / BB_UNITY_WEIGHT));
             }
         }
@@ -2419,12 +2419,6 @@ bool BBPredsChecker::CheckEhTryDsc(BasicBlock* block, BasicBlock* blockPred, EHb
         return true;
     }
 
-    // For OSR, we allow the firstBB to branch to the middle of a try.
-    if (comp->opts.IsOSR() && (blockPred == comp->fgFirstBB))
-    {
-        return true;
-    }
-
     printf("Jump into the middle of try region: " FMT_BB " branches to " FMT_BB "\n", blockPred->bbNum, block->bbNum);
     assert(!"Jump into middle of try region");
     return false;
@@ -2740,6 +2734,52 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
             assert(block->getTryIndex() < compHndBBtabCount);
         }
 
+        // A branch or fall-through to a BBJ_CALLFINALLY block must come from the `try` region associated
+        // with the finally block the BBJ_CALLFINALLY is targeting. There is one special case: if the
+        // BBJ_CALLFINALLY is the first block of a `try`, then its predecessor can be outside the `try`:
+        // either a branch or fall-through to the first block.
+        //
+        // Note that this IR condition is a choice. It naturally occurs when importing EH constructs.
+        // This condition prevents flow optimizations from skipping blocks in a `try` and branching
+        // directly to the BBJ_CALLFINALLY. Relaxing this constraint would require careful thinking about
+        // the implications, such as data flow optimizations.
+        //
+        // Don't depend on predecessors list for the check.
+        for (BasicBlock* const succBlock : block->Succs())
+        {
+            if (succBlock->bbJumpKind == BBJ_CALLFINALLY)
+            {
+                BasicBlock* finallyBlock = succBlock->bbJumpDest;
+                assert(finallyBlock->hasHndIndex());
+                unsigned finallyIndex = finallyBlock->getHndIndex();
+
+                // Now make sure the block branching to the BBJ_CALLFINALLY is in the correct region. The branch
+                // to the BBJ_CALLFINALLY can come from the try region of the finally block, or from a more nested
+                // try region, e.g.:
+                //    try {
+                //        try {
+                //            LEAVE L_OUTER; // this becomes a branch to a BBJ_CALLFINALLY in an outer try region
+                //                           // (in the FEATURE_EH_CALLFINALLY_THUNKS case)
+                //        } catch {
+                //        }
+                //    } finally {
+                //    }
+                //    L_OUTER:
+                //
+                EHblkDsc* ehDsc = ehGetDsc(finallyIndex);
+                if (ehDsc->ebdTryBeg == succBlock)
+                {
+                    // The BBJ_CALLFINALLY is the first block of it's `try` region. Don't check the predecessor.
+                    // Note that this case won't occur in the FEATURE_EH_CALLFINALLY_THUNKS case, since the
+                    // BBJ_CALLFINALLY in that case won't exist in the `try` region of the `finallyIndex`.
+                }
+                else
+                {
+                    assert(bbInTryRegions(finallyIndex, block));
+                }
+            }
+        }
+
         /* Check if BBF_RUN_RARELY is set that we have bbWeight of zero */
         if (block->isRunRarely())
         {
@@ -2777,7 +2817,7 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
     {
         // For instance method:
         assert(info.compThisArg != BAD_VAR_NUM);
-        bool compThisArgAddrExposedOK = !lvaTable[info.compThisArg].lvAddrExposed;
+        bool compThisArgAddrExposedOK = !lvaTable[info.compThisArg].IsAddressExposed();
 
 #ifndef JIT32_GCENCODER
         compThisArgAddrExposedOK = compThisArgAddrExposedOK || copiedForGenericsCtxt;
@@ -2788,7 +2828,7 @@ void Compiler::fgDebugCheckBBlist(bool checkBBNum /* = false */, bool checkBBRef
         // written to or address-exposed.
         assert(compThisArgAddrExposedOK && !lvaTable[info.compThisArg].lvHasILStoreOp &&
                (lvaArg0Var == info.compThisArg ||
-                (lvaArg0Var != info.compThisArg && (lvaTable[lvaArg0Var].lvAddrExposed ||
+                (lvaArg0Var != info.compThisArg && (lvaTable[lvaArg0Var].IsAddressExposed() ||
                                                     lvaTable[lvaArg0Var].lvHasILStoreOp || copiedForGenericsCtxt))));
     }
 }
@@ -2927,7 +2967,7 @@ void Compiler::fgDebugCheckFlags(GenTree* tree)
                 {
                     // Is this constant a handle of some kind?
                     //
-                    unsigned handleKind = (op1->gtFlags & GTF_ICON_HDL_MASK);
+                    GenTreeFlags handleKind = (op1->gtFlags & GTF_ICON_HDL_MASK);
                     if (handleKind != 0)
                     {
                         // Is the GTF_IND_INVARIANT flag set or unset?
@@ -3090,6 +3130,8 @@ void Compiler::fgDebugCheckFlags(GenTree* tree)
 
                     if ((call->gtCallThisArg->GetNode()->gtFlags & GTF_ASG) != 0)
                     {
+                        // TODO-Cleanup: this is a patch for a violation in our GT_ASG propogation
+                        // see https://github.com/dotnet/runtime/issues/13758
                         treeFlags |= GTF_ASG;
                     }
                 }
@@ -3102,6 +3144,8 @@ void Compiler::fgDebugCheckFlags(GenTree* tree)
 
                     if ((use.GetNode()->gtFlags & GTF_ASG) != 0)
                     {
+                        // TODO-Cleanup: this is a patch for a violation in our GT_ASG propogation
+                        // see https://github.com/dotnet/runtime/issues/13758
                         treeFlags |= GTF_ASG;
                     }
                 }
@@ -3175,22 +3219,6 @@ void Compiler::fgDebugCheckFlags(GenTree* tree)
                 chkFlags |= (tree->AsArrOffs()->gtIndex->gtFlags & GTF_ALL_EFFECT);
                 fgDebugCheckFlags(tree->AsArrOffs()->gtArrObj);
                 chkFlags |= (tree->AsArrOffs()->gtArrObj->gtFlags & GTF_ALL_EFFECT);
-                break;
-
-            case GT_ARR_BOUNDS_CHECK:
-#ifdef FEATURE_SIMD
-            case GT_SIMD_CHK:
-#endif // FEATURE_SIMD
-#ifdef FEATURE_HW_INTRINSICS
-            case GT_HW_INTRINSIC_CHK:
-#endif // FEATURE_HW_INTRINSICS
-
-                GenTreeBoundsChk* bndsChk;
-                bndsChk = tree->AsBoundsChk();
-                fgDebugCheckFlags(bndsChk->gtIndex);
-                chkFlags |= (bndsChk->gtIndex->gtFlags & GTF_ALL_EFFECT);
-                fgDebugCheckFlags(bndsChk->gtArrLen);
-                chkFlags |= (bndsChk->gtArrLen->gtFlags & GTF_ALL_EFFECT);
                 break;
 
             case GT_PHI:

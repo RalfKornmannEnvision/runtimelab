@@ -12,7 +12,7 @@ namespace TypeSystemTests
     {
         protected override void PrepareRuntimeSpecificStaticFieldLayout(TypeSystemContext context, ref ComputedStaticFieldLayout layout)
         {
-            // GC statics start with a pointer to the "EEType" that signals the size and GCDesc to the GC
+            // GC statics start with a pointer to the "MethodTable" that signals the size and GCDesc to the GC
             layout.GcStatics.Size = context.Target.LayoutPointerSize;
             layout.ThreadGcStatics.Size = context.Target.LayoutPointerSize;
         }
@@ -28,6 +28,22 @@ namespace TypeSystemTests
             if (layout.ThreadGcStatics.Size == context.Target.LayoutPointerSize)
             {
                 layout.ThreadGcStatics.Size = LayoutInt.Zero;
+            }
+        }
+
+        protected override ComputedInstanceFieldLayout ComputeInstanceFieldLayout(MetadataType type, int numInstanceFields)
+        {
+            if (type.IsExplicitLayout)
+            {
+                return ComputeExplicitFieldLayout(type, numInstanceFields);
+            }
+            else if (type.IsSequentialLayout || type.IsEnum)
+            {
+                return ComputeSequentialFieldLayout(type, numInstanceFields);
+            }
+            else
+            {
+                return ComputeAutoFieldLayout(type, numInstanceFields);
             }
         }
     }

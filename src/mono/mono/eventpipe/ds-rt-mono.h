@@ -135,7 +135,9 @@ bool
 ds_rt_config_value_get_enable (void)
 {
 	bool enable = true;
-	gchar *value = g_getenv ("COMPlus_EnableDiagnostics");
+	gchar *value = g_getenv ("DOTNET_EnableDiagnostics");
+	if (!value)
+		value = g_getenv ("COMPlus_EnableDiagnostics");
 	if (value && atoi (value) == 0)
 		enable = false;
 	g_free (value);
@@ -170,7 +172,7 @@ ds_rt_config_value_get_default_port_suspend (void)
 static
 inline
 ds_ipc_result_t
-ds_rt_generate_core_dump (DiagnosticsGenerateCoreDumpCommandPayload *payload)
+ds_rt_generate_core_dump (DiagnosticsDumpCommandId commandId, DiagnosticsGenerateCoreDumpCommandPayload *payload)
 {
 	// TODO: Implement.
 	return DS_IPC_E_NOTSUPPORTED;

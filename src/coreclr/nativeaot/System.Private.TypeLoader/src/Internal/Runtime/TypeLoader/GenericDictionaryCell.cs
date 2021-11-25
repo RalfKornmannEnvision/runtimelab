@@ -243,10 +243,6 @@ namespace Internal.Runtime.TypeLoader
         {
             internal StaticDataKind DataKind;
             internal TypeDesc Type;
-#if SUPPORTS_NATIVE_METADATA_TYPE_LOADING
-            internal bool Direct; // Set this flag if a direct pointer to the static data is requested
-                                  // otherwise, an extra indirection will be inserted
-#endif
 
             internal override void Prepare(TypeBuilder builder)
             {
@@ -262,28 +258,10 @@ namespace Internal.Runtime.TypeLoader
                 switch (DataKind)
                 {
                     case StaticDataKind.NonGc:
-#if SUPPORTS_NATIVE_METADATA_TYPE_LOADING
-                        if (Direct)
-                        {
-                            return TypeLoaderEnvironment.Instance.TryGetNonGcStaticFieldDataDirect(typeHandle);
-                        }
-                        else
-#endif
-                        {
-                            return TypeLoaderEnvironment.Instance.TryGetNonGcStaticFieldData(typeHandle);
-                        }
+                        return TypeLoaderEnvironment.Instance.TryGetNonGcStaticFieldData(typeHandle);
 
                     case StaticDataKind.Gc:
-#if SUPPORTS_NATIVE_METADATA_TYPE_LOADING
-                        if (Direct)
-                        {
-                            return TypeLoaderEnvironment.Instance.TryGetGcStaticFieldDataDirect(typeHandle);
-                        }
-                        else
-#endif
-                        {
-                            return TypeLoaderEnvironment.Instance.TryGetGcStaticFieldData(typeHandle);
-                        }
+                        return TypeLoaderEnvironment.Instance.TryGetGcStaticFieldData(typeHandle);
 
                     default:
                         Debug.Assert(false);
@@ -481,9 +459,9 @@ namespace Internal.Runtime.TypeLoader
 
             internal override unsafe IntPtr Create(TypeBuilder builder)
             {
-                // Debug sanity check for the size of the EEType structure
+                // Debug sanity check for the size of the MethodTable structure
                 // just to ensure nothing of it gets reduced
-                Debug.Assert(sizeof(EEType) == (IntPtr.Size == 8 ? 24 : 20));
+                Debug.Assert(sizeof(MethodTable) == (IntPtr.Size == 8 ? 24 : 20));
 
                 int result = (int)VTableSlot;
 
@@ -493,7 +471,7 @@ namespace Internal.Runtime.TypeLoader
                 AdjustVtableSlot(ContainingType, ContainingTypeTemplate, ref result);
                 Debug.Assert(result >= 0);
 
-                return (IntPtr)(sizeof(EEType) + result * IntPtr.Size);
+                return (IntPtr)(sizeof(MethodTable) + result * IntPtr.Size);
             }
         }
 #endif
@@ -520,7 +498,7 @@ namespace Internal.Runtime.TypeLoader
             {
                 RuntimeTypeHandle th = GetRuntimeTypeHandleWithNullableTransform(builder, Type);
                 auxResult = th.ToIntPtr();
-                return *(IntPtr*)RuntimeAugments.GetAllocateObjectHelperForType(th);
+                return RuntimeAugments.GetAllocateObjectHelperForType(th);
             }
         }
 
@@ -770,17 +748,17 @@ namespace Internal.Runtime.TypeLoader
                 if (Method is NoMetadataMethodDesc)
                 {
                     // If the method does not have metadata, use the NameAndSignature property which should work in that case.
-                    if (!TypeLoaderEnvironment.Instance.IsStaticMethodSignature(Method.NameAndSignature.Signature))
-                        return false;
+                    if (TypeLoaderEnvironment.Instance.IsStaticMethodSignature(Method.NameAndSignature.Signature))
+                        return true;
                 }
                 else
                 {
                     // Otherwise, use the MethodSignature
-                    if (!Method.Signature.IsStatic)
-                        return false;
+                    if (Method.Signature.IsStatic)
+                        return true;
                 }
 
-                return true;
+                return Method.OwningType.IsValueType && !Method.UnboxingStub;
             }
 
             internal unsafe override IntPtr Create(TypeBuilder builder)
@@ -805,7 +783,9 @@ namespace Internal.Runtime.TypeLoader
 
                 if (Method.FunctionPointer != IntPtr.Zero)
                 {
-                    if (Method.Instantiation.Length > 0 || TypeLoaderEnvironment.Instance.IsStaticMethodSignature(MethodSignature))
+                    if (Method.Instantiation.Length > 0
+                        || TypeLoaderEnvironment.Instance.IsStaticMethodSignature(MethodSignature)
+                        || (Method.OwningType.IsValueType && !Method.UnboxingStub))
                     {
                         Debug.Assert(methodDictionary != IntPtr.Zero);
 #if SUPPORTS_NATIVE_METADATA_TYPE_LOADING
@@ -921,7 +901,7 @@ namespace Internal.Runtime.TypeLoader
             {
                 RuntimeTypeHandle th = GetRuntimeTypeHandleWithNullableTransform(builder, Type);
                 auxResult = th.ToIntPtr();
-                return *(IntPtr*)RuntimeAugments.GetCastingHelperForType(th, Throwing);
+                return RuntimeAugments.GetCastingHelperForType(th, Throwing);
             }
         }
 
@@ -945,31 +925,7 @@ namespace Internal.Runtime.TypeLoader
             internal override unsafe IntPtr CreateLazyLookupCell(TypeBuilder builder, out IntPtr auxResult)
             {
                 auxResult = builder.GetRuntimeTypeHandle(Type).ToIntPtr();
-                return *(IntPtr*)Create(builder);
-            }
-        }
-
-        private class CheckArrayElementTypeCell : GenericDictionaryCell
-        {
-            internal TypeDesc Type;
-
-            internal override void Prepare(TypeBuilder builder)
-            {
-                if (Type.IsCanonicalSubtype(CanonicalFormKind.Any))
-                    Environment.FailFast("Canonical types do not have EETypes");
-
-                builder.RegisterForPreparation(Type);
-            }
-
-            internal override IntPtr Create(TypeBuilder builder)
-            {
-                return RuntimeAugments.GetCheckArrayElementTypeHelperForType(builder.GetRuntimeTypeHandle(Type));
-            }
-
-            internal override unsafe IntPtr CreateLazyLookupCell(TypeBuilder builder, out IntPtr auxResult)
-            {
-                auxResult = builder.GetRuntimeTypeHandle(Type).ToIntPtr();
-                return *(IntPtr*)Create(builder);
+                return Create(builder);
             }
         }
 
@@ -1314,7 +1270,7 @@ namespace Internal.Runtime.TypeLoader
                         var staticDataKind = StaticDataKind.Gc;
                         TypeLoaderLogger.WriteLine("Direct StaticData (" + (staticDataKind == StaticDataKind.Gc ? "Gc" : "NonGc") + ": " + type.ToString());
 
-                        cell = new StaticDataCell() { DataKind = staticDataKind, Type = type, Direct = true };
+                        cell = new StaticDataCell() { DataKind = staticDataKind, Type = type };
                     }
                     break;
 
@@ -1324,7 +1280,7 @@ namespace Internal.Runtime.TypeLoader
                         var staticDataKind = StaticDataKind.NonGc;
                         TypeLoaderLogger.WriteLine("Direct StaticData (" + (staticDataKind == StaticDataKind.Gc ? "Gc" : "NonGc") + ": " + type.ToString());
 
-                        cell = new StaticDataCell() { DataKind = staticDataKind, Type = type, Direct = true };
+                        cell = new StaticDataCell() { DataKind = staticDataKind, Type = type };
                     }
                     break;
 
@@ -1812,16 +1768,6 @@ namespace Internal.Runtime.TypeLoader
                         TypeLoaderLogger.WriteLine("AllocateArray on: " + type.ToString());
 
                         cell = new AllocateArrayCell { Type = type };
-                    }
-                    break;
-
-                case FixupSignatureKind.CheckArrayElementType:
-                    {
-                        var type = nativeLayoutInfoLoadContext.GetType(ref parser);
-
-                        TypeLoaderLogger.WriteLine("CheckArrayElementType on: " + type.ToString());
-
-                        cell = new CheckArrayElementTypeCell { Type = type };
                     }
                     break;
 

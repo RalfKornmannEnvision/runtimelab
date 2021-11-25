@@ -20,7 +20,7 @@ For the compiler to work, it first needs to be added to your project.
 In your shell/command prompt navigate to the root directory of your project and run the command:
 
 ```bash
-> dotnet new nuget
+> dotnet new nugetconfig
 ```
 
 This will add a nuget.config file to your application. Open the file and in the ``<packageSources> `` element under ``<clear/>`` add the following:
@@ -33,7 +33,7 @@ This will add a nuget.config file to your application. Open the file and in the 
 Once you've added the package source, add a reference to the compiler by running the following command:
 
 ```bash
-> dotnet add package Microsoft.DotNet.ILCompiler -v 6.0.0-*
+> dotnet add package Microsoft.DotNet.ILCompiler -v 7.0.0-*
 ```
 
 ## Restore and Publish your app
@@ -50,6 +50,6 @@ where `<Configuration>` is your project configuration (such as Debug or Release)
 > dotnet publish -r win-x64 -c release
 ```
 
-Once completed, you can find the native executable in the root folder of your project under `/bin/<Configuration>/net5.0/<RID>/publish/`. Navigate to `/bin/<Configuration>/net5.0/<RID>/publish/` in your project folder and run the produced native executable.
+Once completed, you can find the native executable in the root folder of your project under `/bin/<Configuration>/net6.0/<RID>/publish/`. Navigate to `/bin/<Configuration>/net6.0/<RID>/publish/` in your project folder and run the produced native executable.
 
 Feel free to modify the sample application and experiment. However, keep in mind some functionality might not yet be supported in NativeAOT. Let us know on the [Issues page](https://github.com/dotnet/runtimelab/issues).

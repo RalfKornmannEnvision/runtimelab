@@ -2,8 +2,7 @@
   <PropertyGroup>
     <AssemblyName>System.Runtime</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <!-- Workaround for https://github.com/dotnet/runtimelab/issues/1301 -->
-    <!-- <FeatureGenericMath>true</FeatureGenericMath> -->
+    <FeatureGenericMath>true</FeatureGenericMath>
     <!-- It is a core assembly because it defines System.Object so we need to pass RuntimeMetadataVersion to the compiler -->
     <RuntimeMetadataVersion>v4.0.30319</RuntimeMetadataVersion>
     <!-- disable warnings about obsolete APIs,
@@ -20,6 +19,8 @@
     <IsPackable>true</IsPackable>
     <PackageDescription>Exposes new experimental APIs from System.Runtime</PackageDescription>
     <PackageId>$(MSBuildProjectName)</PackageId>
+    <!-- TODO: Remove when the package shipped with NET6. -->
+    <DisablePackageBaselineValidation>true</DisablePackageBaselineValidation>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(LibrariesProjectRoot)System.Runtime\ref\System.Runtime.cs" />

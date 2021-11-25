@@ -1,8 +1,15 @@
 cmake_minimum_required(VERSION 3.6.2)
 
-cmake_policy(SET CMP0042 NEW)
+cmake_policy(SET CMP0042 NEW) # MACOSX_RPATH is enabled by default.
+
+if (CMAKE_VERSION VERSION_GREATER 3.7 OR CMAKE_VERSION VERSION_EQUAL 3.7)
+  cmake_policy(SET CMP0066 NEW) # Honor per-config flags in try_compile() source-file signature.
+endif()
+if (CMAKE_VERSION VERSION_GREATER 3.8 OR CMAKE_VERSION VERSION_EQUAL 3.8)
+  cmake_policy(SET CMP0067 NEW) # Honor language standard in try_compile() source-file signature
+endif()
 if (CMAKE_VERSION VERSION_GREATER 3.15 OR CMAKE_VERSION VERSION_EQUAL 3.15)
-  cmake_policy(SET CMP0091 NEW)
+  cmake_policy(SET CMP0091 NEW) # MSVC runtime library flags are selected by an abstraction.
 endif()
 
 # Set the project name
@@ -10,6 +17,8 @@ project(CoreCLR)
 
 include(../../eng/native/configurepaths.cmake)
 include(${CLR_ENG_NATIVE_DIR}/configurecompiler.cmake)
+
+include_directories("${CLR_SRC_NATIVE_DIR}")
 
 if(MSVC)
   set(CMAKE_CXX_STANDARD_LIBRARIES "") # do not link against standard win32 libs i.e. kernel32, uuid, user32, etc.
@@ -20,7 +29,6 @@ set(CLR_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(VM_DIR ${CMAKE_CURRENT_SOURCE_DIR}/vm)
 set(GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/inc)
 set(GENERATED_EVENTING_DIR ${CMAKE_CURRENT_BINARY_DIR}/Eventing)
-set(VERSION_FILE_PATH "${CMAKE_BINARY_DIR}/version.c")
 set(PAL_REDEFINES_FILE ${CMAKE_CURRENT_SOURCE_DIR}/dlls/mscordac/palredefines.S)
 
 # Avoid logging when skipping up-to-date copies
@@ -33,10 +41,6 @@ if(CORECLR_SET_RPATH)
 endif(CORECLR_SET_RPATH)
 
 OPTION(CLR_CMAKE_ENABLE_CODE_COVERAGE "Enable code coverage" OFF)
-
-if(CLR_CMAKE_HOST_ARCH_S390X)
-  add_definitions(-DBIGENDIAN)
-endif(CLR_CMAKE_HOST_ARCH_S390X)
 
 #----------------------------------------------------
 # Cross target Component build specific configuration
@@ -130,7 +134,7 @@ endif()
 #-------------------------------------
 # Include the basic prebuilt headers - required for getting fileversion resource details.
 include_directories("pal/prebuilt/inc")
-include_directories("../../artifacts/obj/coreclr")
+include_directories(${CLR_ARTIFACTS_OBJ_DIR})
 
 add_subdirectory(tools/aot/jitinterface)
 
@@ -227,10 +231,6 @@ if(CLR_CMAKE_HOST_UNIX)
 
   add_subdirectory(nativeresources)
 endif(CLR_CMAKE_HOST_UNIX)
-
-if ((CMAKE_CXX_COMPILER_ID STREQUAL "GNU") AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 10.0))
-    add_compile_options(-Wno-error=stringop-overflow=)
-endif()
 
 add_subdirectory(utilcode)
 add_subdirectory(inc)

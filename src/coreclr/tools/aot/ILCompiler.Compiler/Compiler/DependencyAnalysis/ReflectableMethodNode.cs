@@ -32,6 +32,10 @@ namespace ILCompiler.DependencyAnalysis
         {
             Debug.Assert(!factory.MetadataManager.IsReflectionBlocked(_method.GetTypicalMethodDefinition()));
 
+            // Depends on static virtual method support. Turning off reflection for now.
+            if (_method.IsVirtual && _method.Signature.IsStatic)
+                return null;
+
             DependencyList dependencies = new DependencyList();
             factory.MetadataManager.GetDependenciesDueToReflectability(ref dependencies, factory, _method);
 
@@ -63,7 +67,7 @@ namespace ILCompiler.DependencyAnalysis
                 {
                     if (_method.HasInstantiation)
                     {
-                        dependencies.Add(factory.GVMDependencies(_method), "GVM callable reflectable method");
+                        dependencies.Add(factory.GVMDependencies(_method.GetCanonMethodTarget(CanonicalFormKind.Specific)), "GVM callable reflectable method");
                     }
                     else
                     {

@@ -20,7 +20,15 @@ namespace System.Text.Json
     {
         internal const int BufferSizeDefault = 16 * 1024;
 
-        internal static readonly JsonSerializerOptions s_defaultOptions = new JsonSerializerOptions();
+        /// <summary>
+        /// Gets a read-only, singleton instance of <see cref="JsonSerializerOptions" /> that uses the default configuration.
+        /// </summary>
+        /// <remarks>
+        /// Each <see cref="JsonSerializerOptions" /> instance encapsulates its own serialization metadata caches,
+        /// so using fresh default instances every time one is needed can result in redundant recomputation of converters.
+        /// This property provides a shared instance that can be consumed by any number of components without necessitating any converter recomputation.
+        /// </remarks>
+        public static JsonSerializerOptions Default { get; } = new JsonSerializerOptions { _haveTypesBeenCreated = true };
 
         private readonly ConcurrentDictionary<Type, JsonTypeInfo> _classes = new ConcurrentDictionary<Type, JsonTypeInfo>();
 
@@ -575,11 +583,22 @@ namespace System.Text.Json
             }
         }
 
+        /// <summary>
+        /// Whether <see cref="InitializeForReflectionSerializer()"/> needs to be called.
+        /// </summary>
+        internal bool IsInitializedForReflectionSerializer { get; set; }
+
+        /// <summary>
+        /// Initializes the converters for the reflection-based serializer.
+        /// <seealso cref="InitializeForReflectionSerializer"/> must be checked before calling.
+        /// </summary>
         [RequiresUnreferencedCode(JsonSerializer.SerializationUnreferencedCodeMessage)]
-        internal void RootBuiltInConvertersAndTypeInfoCreator()
+        internal void InitializeForReflectionSerializer()
         {
+            // For threading cases, the state that is set here can be overwritten.
             RootBuiltInConverters();
-            _typeInfoCreationFunc ??= CreateJsonTypeInfo;
+            _typeInfoCreationFunc = CreateJsonTypeInfo;
+            IsInitializedForReflectionSerializer = true;
 
             [RequiresUnreferencedCode(JsonSerializer.SerializationUnreferencedCodeMessage)]
             static JsonTypeInfo CreateJsonTypeInfo(Type type, JsonSerializerOptions options) => new JsonTypeInfo(type, options);
@@ -589,9 +608,7 @@ namespace System.Text.Json
         {
             _haveTypesBeenCreated = true;
 
-            // todo: for performance and reduced instances, consider using the converters and JsonTypeInfo from s_defaultOptions by cloning (or reference directly if no changes).
-            // https://github.com/dotnet/runtime/issues/32357
-            if (!_classes.TryGetValue(type, out JsonTypeInfo? result))
+            if (!TryGetClass(type, out JsonTypeInfo? result))
             {
                 result = _classes.GetOrAdd(type, GetClassFromContextOrCreate(type));
             }
@@ -620,6 +637,7 @@ namespace System.Text.Json
         /// Return the TypeInfo for root API calls.
         /// This has a LRU cache that is intended only for public API calls that specify the root type.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal JsonTypeInfo GetOrAddClassForRootType(Type type)
         {
             JsonTypeInfo? jsonTypeInfo = _lastClass;
@@ -632,6 +650,20 @@ namespace System.Text.Json
             return jsonTypeInfo;
         }
 
+        internal bool TryGetClass(Type type, [NotNullWhen(true)] out JsonTypeInfo? jsonTypeInfo)
+        {
+            // todo: for performance and reduced instances, consider using the converters and JsonTypeInfo from s_defaultOptions by cloning (or reference directly if no changes).
+            // https://github.com/dotnet/runtime/issues/32357
+            if (!_classes.TryGetValue(type, out JsonTypeInfo? result))
+            {
+                jsonTypeInfo = null;
+                return false;
+            }
+
+            jsonTypeInfo = result;
+            return true;
+        }
+
         internal bool TypeIsCached(Type type)
         {
             return _classes.ContainsKey(type);
@@ -641,6 +673,16 @@ namespace System.Text.Json
         {
             _classes.Clear();
             _lastClass = null;
+        }
+
+        internal JsonDocumentOptions GetDocumentOptions()
+        {
+            return new JsonDocumentOptions
+            {
+                AllowTrailingCommas = AllowTrailingCommas,
+                CommentHandling = ReadCommentHandling,
+                MaxDepth = MaxDepth
+            };
         }
 
         internal JsonNodeOptions GetNodeOptions()
@@ -675,9 +717,6 @@ namespace System.Text.Json
 
         internal void VerifyMutable()
         {
-            // The default options are hidden and thus should be immutable.
-            Debug.Assert(this != s_defaultOptions);
-
             if (_haveTypesBeenCreated || _context != null)
             {
                 ThrowHelper.ThrowInvalidOperationException_SerializerOptionsImmutable(_context);

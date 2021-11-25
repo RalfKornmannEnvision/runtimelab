@@ -40,7 +40,7 @@ namespace System
         // This method is targeted by the Delegate ILTransformer.
         //
         //
-        public static object CheckArgument(object srcObject, RuntimeTypeHandle dstType, BinderBundle binderBundle)
+        public static object? CheckArgument(object? srcObject, RuntimeTypeHandle dstType, BinderBundle? binderBundle)
         {
             EETypePtr dstEEType = dstType.ToEETypePtr();
             return CheckArgument(srcObject, dstEEType, CheckArgumentSemantics.DynamicInvoke, binderBundle, ref Unsafe.NullRef<ArgSetupState>());
@@ -54,12 +54,12 @@ namespace System
             SetFieldDirect,      // Throws ArgumentException - other than that, like DynamicInvoke except that enums and integers cannot be intermingled, and null cannot substitute for default(valuetype).
         }
 
-        internal static object CheckArgument(object srcObject, EETypePtr dstEEType, CheckArgumentSemantics semantics, BinderBundle binderBundle)
+        internal static object? CheckArgument(object? srcObject, EETypePtr dstEEType, CheckArgumentSemantics semantics, BinderBundle? binderBundle)
         {
             return CheckArgument(srcObject, dstEEType, semantics, binderBundle, ref Unsafe.NullRef<ArgSetupState>());
         }
 
-        internal static object CheckArgument(object srcObject, EETypePtr dstEEType, CheckArgumentSemantics semantics, BinderBundle binderBundle, ref ArgSetupState argSetupState)
+        internal static object? CheckArgument(object? srcObject, EETypePtr dstEEType, CheckArgumentSemantics semantics, BinderBundle? binderBundle, ref ArgSetupState argSetupState)
         {
             // Methods with ByRefLike types in signatures should be filtered out by the compiler
             Debug.Assert(!dstEEType.IsByRefLike);
@@ -89,6 +89,13 @@ namespace System
                 if (RuntimeImports.AreTypesAssignable(srcEEType, dstEEType))
                     return srcObject;
 
+                if (dstEEType.IsInterface)
+                {
+                    if (srcObject is Runtime.InteropServices.IDynamicInterfaceCastable castable
+                        && castable.IsInterfaceImplemented(new RuntimeTypeHandle(dstEEType), throwIfNotImplemented: false))
+                        return srcObject;
+                }
+
                 object dstObject;
                 Exception exception = ConvertOrWidenPrimitivesEnumsAndPointersIfPossible(srcObject, srcEEType, dstEEType, semantics, out dstObject);
                 if (exception == null)
@@ -102,7 +109,7 @@ namespace System
                 if (Unsafe.IsNullRef(ref argSetupState))
                 {
                     // We were called by someone other than DynamicInvokeParamHelperCore(). Those callers pass the correct dstEEType.
-                    exactDstType = Type.GetTypeFromHandle(new RuntimeTypeHandle(dstEEType));
+                    exactDstType = Type.GetTypeFromHandle(new RuntimeTypeHandle(dstEEType))!;
                 }
                 else
                 {
@@ -301,12 +308,12 @@ namespace System
         public struct ArgSetupState
         {
             public bool fComplete;
-            public object[] parameters;
+            public object?[]? parameters;
             public object[] nullableCopyBackObjects;
             public int curIndex;
             public object targetMethodOrDelegate;
-            public BinderBundle binderBundle;
-            public object[] customBinderProvidedParameters;
+            public BinderBundle? binderBundle;
+            public object?[] customBinderProvidedParameters;
         }
 
         private static object GetDefaultValue(object targetMethodOrDelegate, RuntimeTypeHandle thType, int argIndex)
@@ -345,8 +352,8 @@ namespace System
             IntPtr dynamicInvokeHelperMethod,
             IntPtr dynamicInvokeHelperGenericDictionary,
             object targetMethodOrDelegate,
-            object[] parameters,
-            BinderBundle binderBundle,
+            object[]? parameters,
+            BinderBundle? binderBundle,
             bool wrapInTargetInvocationException,
             bool methodToCallIsThisCall = true)
         {
@@ -454,7 +461,7 @@ namespace System
 
         private static object DynamicInvokeBoxIntoNonNullable(object actualBoxedNullable)
         {
-            // grab the pointer to data, box using the EEType of the actualBoxedNullable, and then return the boxed object
+            // grab the pointer to data, box using the MethodTable of the actualBoxedNullable, and then return the boxed object
             return RuntimeImports.RhBox(actualBoxedNullable.EETypePtr, ref actualBoxedNullable.GetRawData());
         }
 
@@ -502,7 +509,7 @@ namespace System
             }
         }
 
-        internal static object DynamicInvokeBoxedValuetypeReturn(out DynamicInvokeParamLookupType paramLookupType, object boxedValuetype, object[] parameters, int index, RuntimeTypeHandle type, DynamicInvokeParamType paramType, ref object[] nullableCopyBackObjects)
+        internal static object DynamicInvokeBoxedValuetypeReturn(out DynamicInvokeParamLookupType paramLookupType, object? boxedValuetype, object[]? parameters, int index, RuntimeTypeHandle type, DynamicInvokeParamType paramType, ref object[] nullableCopyBackObjects)
         {
             object finalObjectToReturn = boxedValuetype;
             EETypePtr eeType = type.ToEETypePtr();
@@ -541,7 +548,7 @@ namespace System
             return finalObjectToReturn;
         }
 
-        internal static object DynamicInvokeUnmanagedPointerReturn(out DynamicInvokeParamLookupType paramLookupType, object boxedPointerType, int index, RuntimeTypeHandle type, DynamicInvokeParamType paramType)
+        internal static object DynamicInvokeUnmanagedPointerReturn(out DynamicInvokeParamLookupType paramLookupType, object? boxedPointerType, int index, RuntimeTypeHandle type, DynamicInvokeParamType paramType)
         {
             object finalObjectToReturn = boxedPointerType;
 
@@ -563,7 +570,8 @@ namespace System
             if (index >= parametersLength)
                 throw new System.Reflection.TargetParameterCountException();
 
-            object incomingParam = argSetupState.parameters[index];
+            Debug.Assert(argSetupState.parameters != null);
+            object? incomingParam = argSetupState.parameters[index];
 
             // Handle default parameters
             if ((incomingParam == System.Reflection.Missing.Value) && paramType == DynamicInvokeParamType.In)

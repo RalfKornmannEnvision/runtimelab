@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 
@@ -189,7 +190,7 @@ namespace System.Runtime
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetMemoryInfo")]
-        internal static extern void RhGetMemoryInfo(out GCMemoryInfoData info, GCKind kind);
+        internal static extern void RhGetMemoryInfo(ref byte info, GCKind kind);
 
         [DllImport(RuntimeLibrary, ExactSpelling = true)]
         internal static unsafe extern void RhAllocateNewArray(IntPtr pArrayEEType, uint numElements, uint flags, void* pResult);
@@ -236,19 +237,6 @@ namespace System.Runtime
             return h;
         }
 
-        // Allocate variable handle with its initial type.
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhpHandleAllocVariable")]
-        private static extern IntPtr RhpHandleAllocVariable(object value, uint type);
-
-        internal static IntPtr RhHandleAllocVariable(object value, uint type)
-        {
-            IntPtr h = RhpHandleAllocVariable(value, type);
-            if (h == IntPtr.Zero)
-                throw new OutOfMemoryException();
-            return h;
-        }
-
         // Free handle.
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhHandleFree")]
@@ -277,28 +265,12 @@ namespace System.Runtime
         // Set object reference into handle.
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhHandleSet")]
-        internal static extern void RhHandleSet(IntPtr handle, object value);
+        internal static extern void RhHandleSet(IntPtr handle, object? value);
 
         // Set the secondary object reference into a dependent handle.
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhHandleSetDependentSecondary")]
         internal static extern void RhHandleSetDependentSecondary(IntPtr handle, object secondary);
-
-        // Get the handle type associated with a variable handle.
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhHandleGetVariableType")]
-        internal static extern uint RhHandleGetVariableType(IntPtr handle);
-
-        // Set the handle type associated with a variable handle.
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhHandleSetVariableType")]
-        internal static extern void RhHandleSetVariableType(IntPtr handle, uint type);
-
-        // Conditionally and atomically set the handle type associated with a variable handle if the current
-        // type is the one specified. Returns the previous handle type.
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhHandleCompareExchangeVariableType")]
-        internal static extern uint RhHandleCompareExchangeVariableType(IntPtr handle, uint oldType, uint newType);
 
         //
         // calls to runtime for type equality checks
@@ -306,39 +278,36 @@ namespace System.Runtime
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_AreTypesEquivalent")]
-        private static unsafe extern bool AreTypesEquivalent(EEType* pType1, EEType* pType2);
+        private static unsafe extern bool AreTypesEquivalent(MethodTable* pType1, MethodTable* pType2);
 
         internal static unsafe bool AreTypesEquivalent(EETypePtr pType1, EETypePtr pType2)
             => AreTypesEquivalent(pType1.ToPointer(), pType2.ToPointer());
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_AreTypesAssignable")]
-        private static unsafe extern bool AreTypesAssignable(EEType* pSourceType, EEType* pTargetType);
+        private static unsafe extern bool AreTypesAssignable(MethodTable* pSourceType, MethodTable* pTargetType);
 
         internal static unsafe bool AreTypesAssignable(EETypePtr pSourceType, EETypePtr pTargetType)
             => AreTypesAssignable(pSourceType.ToPointer(), pTargetType.ToPointer());
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_CheckArrayStore")]
-        internal static extern void RhCheckArrayStore(object array, object obj);
+        internal static extern void RhCheckArrayStore(object array, object? obj);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_IsInstanceOf")]
-        private static unsafe extern object IsInstanceOf(EEType* pTargetType, object obj);
+        private static unsafe extern object IsInstanceOf(MethodTable* pTargetType, object obj);
 
         internal static unsafe object IsInstanceOf(EETypePtr pTargetType, object obj)
             => IsInstanceOf(pTargetType.ToPointer(), obj);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_IsInstanceOfClass")]
-        private  static unsafe extern object IsInstanceOfClass(EEType* pTargetType, object obj);
-
-        internal static unsafe object IsInstanceOfClass(EETypePtr pTargetType, object obj)
-            => IsInstanceOfClass(pTargetType.ToPointer(), obj);
+        private  static unsafe extern object IsInstanceOfClass(MethodTable* pTargetType, object obj);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhTypeCast_IsInstanceOfInterface")]
-        internal static unsafe extern object IsInstanceOfInterface(EEType* pTargetType, object obj);
+        internal static unsafe extern object IsInstanceOfInterface(MethodTable* pTargetType, object obj);
 
         internal static unsafe object IsInstanceOfInterface(EETypePtr pTargetType, object obj)
             => IsInstanceOfInterface(pTargetType.ToPointer(), obj);
@@ -351,44 +320,44 @@ namespace System.Runtime
         //
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhBoxAny")]
-        private static unsafe extern object RhBoxAny(ref byte pData, EEType* pEEType);
+        private static unsafe extern object RhBoxAny(ref byte pData, MethodTable* pEEType);
 
         internal static unsafe object RhBoxAny(ref byte pData, EETypePtr pEEType)
             => RhBoxAny(ref pData, pEEType.ToPointer());
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhNewObject")]
-        private static unsafe extern object RhNewObject(EEType* pEEType);
+        private static unsafe extern object RhNewObject(MethodTable* pEEType);
 
         internal static unsafe object RhNewObject(EETypePtr pEEType)
             => RhNewObject(pEEType.ToPointer());
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhNewArray")]
-        private static unsafe extern Array RhNewArray(EEType* pEEType, int length);
+        private static unsafe extern Array RhNewArray(MethodTable* pEEType, int length);
 
         internal static unsafe Array RhNewArray(EETypePtr pEEType, int length)
             => RhNewArray(pEEType.ToPointer(), length);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhNewString")]
-        internal static unsafe extern string RhNewString(EEType* pEEType, int length);
+        internal static unsafe extern string RhNewString(MethodTable* pEEType, int length);
 
         internal static unsafe string RhNewString(EETypePtr pEEType, int length)
             => RhNewString(pEEType.ToPointer(), length);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhBox")]
-        private static extern unsafe object RhBox(EEType* pEEType, ref byte data);
+        private static extern unsafe object RhBox(MethodTable* pEEType, ref byte data);
 
         internal static unsafe object RhBox(EETypePtr pEEType, ref byte data)
             => RhBox(pEEType.ToPointer(), ref data);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhUnbox")]
-        private static extern unsafe void RhUnbox(object obj, ref byte data, EEType* pUnboxToEEType);
+        private static extern unsafe void RhUnbox(object? obj, ref byte data, MethodTable* pUnboxToEEType);
 
-        internal static unsafe void RhUnbox(object obj, ref byte data, EETypePtr pUnboxToEEType)
+        internal static unsafe void RhUnbox(object? obj, ref byte data, EETypePtr pUnboxToEEType)
             => RhUnbox(obj, ref data, pUnboxToEEType.ToPointer());
 
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -396,8 +365,8 @@ namespace System.Runtime
         internal static extern object RhMemberwiseClone(object obj);
 
         // Busy spin for the given number of iterations.
-        [MethodImpl(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhSpinWait")]
+        [DllImport(RuntimeLibrary, EntryPoint = "RhSpinWait", CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+        [SuppressGCTransition]
         internal static extern void RhSpinWait(int iterations);
 
         // Yield the cpu to another thread ready to process, if one is available.
@@ -426,7 +395,7 @@ namespace System.Runtime
 #endif
 
         //
-        // EEType interrogation methods.
+        // MethodTable interrogation methods.
         //
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
@@ -477,16 +446,6 @@ namespace System.Runtime
         [RuntimeImport(RuntimeLibrary, "RhResolveDispatchOnType")]
         internal static extern IntPtr RhResolveDispatchOnType(EETypePtr instanceType, EETypePtr interfaceType, ushort slot);
 
-        // Keep in sync with RH\src\rtu\runtimeinstance.cpp
-        internal enum RuntimeHelperKind
-        {
-            AllocateObject,
-            IsInst,
-            CastClass,
-            AllocateArray,
-            CheckArrayElementType,
-        }
-
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetRuntimeHelperForType")]
         internal static extern unsafe IntPtr RhGetRuntimeHelperForType(EETypePtr pEEType, RuntimeHelperKind kind);
@@ -518,10 +477,6 @@ namespace System.Runtime
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhUnregisterRefCountedHandleCallback")]
         internal static extern void RhUnregisterRefCountedHandleCallback(IntPtr pCalloutMethod, EETypePtr pTypeFilter);
-
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhIsPromoted")]
-        internal static extern bool RhIsPromoted(object obj);
 
         //
         // Blob support
@@ -567,10 +522,6 @@ namespace System.Runtime
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetOSModuleFromEEType")]
         internal static extern IntPtr RhGetOSModuleFromEEType(IntPtr pEEType);
-
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "RhGetOSModuleForMrt")]
-        internal static extern IntPtr RhGetOSModuleForMrt();
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetThreadStaticStorageForModule")]
@@ -718,11 +669,11 @@ namespace System.Runtime
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhpCheckedLockCmpXchg")]
-        internal static extern object InterlockedCompareExchange(ref object location1, object value, object comparand);
+        internal static extern object InterlockedCompareExchange(ref object? location1, object? value, object? comparand);
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhpCheckedXchg")]
-        internal static extern object InterlockedExchange(ref object location1, object value);
+        internal static extern object InterlockedExchange([NotNullIfNotNull("value")] ref object? location1, object? value);
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhpMemoryBarrier")]
@@ -982,16 +933,6 @@ namespace System.Runtime
 
         [Intrinsic]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "ilogb")]
-        internal static extern int ilogb(double x);
-
-        [Intrinsic]
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [RuntimeImport(RuntimeLibrary, "ilogbf")]
-        internal static extern int ilogbf(float x);
-
-        [Intrinsic]
-        [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "modf")]
         internal static extern unsafe double modf(double x, double* intptr);
 
@@ -1018,9 +959,8 @@ namespace System.Runtime
 
         internal struct RhCorElementTypeInfo
         {
-            public RhCorElementTypeInfo(byte log2OfSize, ushort widenMask, bool isPrimitive = false)
+            public RhCorElementTypeInfo(ushort widenMask, bool isPrimitive = false)
             {
-                _log2OfSize = log2OfSize;
                 RhCorElementTypeInfoFlags flags = RhCorElementTypeInfoFlags.IsValid;
                 if (isPrimitive)
                     flags |= RhCorElementTypeInfoFlags.IsPrimitive;
@@ -1041,14 +981,6 @@ namespace System.Runtime
                 get
                 {
                     return 0 != (_flags & RhCorElementTypeInfoFlags.IsFloat);
-                }
-            }
-
-            public byte Log2OfSize
-            {
-                get
-                {
-                    return _log2OfSize;
                 }
             }
 
@@ -1082,7 +1014,6 @@ namespace System.Runtime
             }
 
 
-            private byte _log2OfSize;
             private RhCorElementTypeInfoFlags _flags;
 
             [Flags]
@@ -1095,66 +1026,60 @@ namespace System.Runtime
 
             private ushort _widenMask;
 
-
-#if TARGET_64BIT
-            const byte log2PointerSize = 3;
-#else
-            private const byte log2PointerSize = 2;
-#endif
             private static RhCorElementTypeInfo[] s_lookupTable = new RhCorElementTypeInfo[]
             {
                 // index = 0x0
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x1
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x2 = ELEMENT_TYPE_BOOLEAN   (W = BOOL)
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0004, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x0004, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x3 = ELEMENT_TYPE_CHAR      (W = U2, CHAR, I4, U4, I8, U8, R4, R8) (U2 == Char)
-                new RhCorElementTypeInfo { _log2OfSize = 1, _widenMask = 0x3f88, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3f88, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x4 = ELEMENT_TYPE_I1        (W = I1, I2, I4, I8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x3550, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3550, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x5 = ELEMENT_TYPE_U1        (W = CHAR, U1, I2, U2, I4, U4, I8, U8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x3FE8, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3FE8, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x6 = ELEMENT_TYPE_I2        (W = I2, I4, I8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 1, _widenMask = 0x3540, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3540, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x7 = ELEMENT_TYPE_U2        (W = U2, CHAR, I4, U4, I8, U8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 1, _widenMask = 0x3F88, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3F88, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x8 = ELEMENT_TYPE_I4        (W = I4, I8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 2, _widenMask = 0x3500, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3500, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x9 = ELEMENT_TYPE_U4        (W = U4, I8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 2, _widenMask = 0x3E00, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3E00, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0xa = ELEMENT_TYPE_I8        (W = I8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 3, _widenMask = 0x3400, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3400, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0xb = ELEMENT_TYPE_U8        (W = U8, R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 3, _widenMask = 0x3800, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x3800, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0xc = ELEMENT_TYPE_R4        (W = R4, R8)
-                new RhCorElementTypeInfo { _log2OfSize = 2, _widenMask = 0x3000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive|RhCorElementTypeInfoFlags.IsFloat },
+                new RhCorElementTypeInfo { _widenMask = 0x3000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive|RhCorElementTypeInfoFlags.IsFloat },
                 // index = 0xd = ELEMENT_TYPE_R8        (W = R8)
-                new RhCorElementTypeInfo { _log2OfSize = 3, _widenMask = 0x2000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive|RhCorElementTypeInfoFlags.IsFloat },
+                new RhCorElementTypeInfo { _widenMask = 0x2000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive|RhCorElementTypeInfoFlags.IsFloat },
                 // index = 0xe
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0xf
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x10
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x11
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x12
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x13
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x14
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x15
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x16
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x17
-                new RhCorElementTypeInfo { _log2OfSize = 0, _widenMask = 0x0000, _flags = 0 },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = 0 },
                 // index = 0x18 = ELEMENT_TYPE_I
-                new RhCorElementTypeInfo { _log2OfSize = log2PointerSize, _widenMask = 0x0000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
                 // index = 0x19 = ELEMENT_TYPE_U
-                new RhCorElementTypeInfo { _log2OfSize = log2PointerSize, _widenMask = 0x0000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
+                new RhCorElementTypeInfo { _widenMask = 0x0000, _flags = RhCorElementTypeInfoFlags.IsValid|RhCorElementTypeInfoFlags.IsPrimitive },
             };
         }
     }

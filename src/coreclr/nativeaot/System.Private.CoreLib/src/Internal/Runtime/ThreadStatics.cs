@@ -4,7 +4,10 @@
 using System;
 using System.Runtime;
 using System.Runtime.CompilerServices;
+
 using Internal.Runtime.CompilerHelpers;
+
+using Debug = System.Diagnostics.Debug;
 
 namespace Internal.Runtime
 {
@@ -32,6 +35,7 @@ namespace Internal.Runtime
             return GetThreadStaticBaseForTypeSlow(pModuleData, typeTlsIndex);
         }
 
+        [RuntimeExport("RhpGetThreadStaticBaseForTypeSlow")]
         [MethodImpl(MethodImplOptions.NoInlining)]
         internal static unsafe object GetThreadStaticBaseForTypeSlow(TypeManagerSlot* pModuleData, int typeTlsIndex)
         {
@@ -44,6 +48,9 @@ namespace Internal.Runtime
 
             // Allocate an object that will represent a memory block for all thread static fields of the type
             object threadStaticBase = AllocateThreadStaticStorageForType(pModuleData->TypeManager, typeTlsIndex);
+
+            Debug.Assert(storage[typeTlsIndex] == null);
+
             storage[typeTlsIndex] = threadStaticBase;
 
             return threadStaticBase;
@@ -87,7 +94,7 @@ namespace Internal.Runtime
             IntPtr* threadStaticRegion;
 
             // Get a pointer to the beginning of the module's Thread Static section. Then get a pointer
-            // to the EEType that represents a memory map for thread statics storage.
+            // to the MethodTable that represents a memory map for thread statics storage.
             threadStaticRegion = (IntPtr*)RuntimeImports.RhGetModuleSection(typeManager, ReadyToRunSectionType.ThreadStaticRegion, out length);
             return RuntimeImports.RhNewObject(new EETypePtr(threadStaticRegion[typeTlsIndex]));
         }

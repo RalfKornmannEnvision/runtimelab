@@ -11,7 +11,7 @@ namespace Internal.TypeSystem
     /// MetadataFieldLayout algorithm which can be used to compute field layout
     /// for any MetadataType where all fields are available by calling GetFields.
     /// </summary>
-    public class MetadataFieldLayoutAlgorithm : FieldLayoutAlgorithm
+    public abstract class MetadataFieldLayoutAlgorithm : FieldLayoutAlgorithm
     {
         public override ComputedInstanceFieldLayout ComputeInstanceLayout(DefType defType, InstanceLayoutKind layoutKind)
         {
@@ -167,23 +167,7 @@ namespace Internal.TypeSystem
             return ComputeInstanceFieldLayout(type, numInstanceFields);
         }
 
-        protected virtual ComputedInstanceFieldLayout ComputeInstanceFieldLayout(MetadataType type, int numInstanceFields)
-        {
-            if (type.IsExplicitLayout)
-            {
-                return ComputeExplicitFieldLayout(type, numInstanceFields);
-            }
-            // Sequential layout has to be respected for blittable types only. We use approximation and respect it for
-            // all types without GC references (ie C# unmanaged types).
-            else if (type.IsSequentialLayout && !type.ContainsGCPointers)
-            {
-                return ComputeSequentialFieldLayout(type, numInstanceFields);
-            }
-            else
-            {
-                return ComputeAutoFieldLayout(type, numInstanceFields);
-            }
-        }
+        protected abstract ComputedInstanceFieldLayout ComputeInstanceFieldLayout(MetadataType type, int numInstanceFields);
 
         public override ComputedStaticFieldLayout ComputeStaticFieldLayout(DefType defType, StaticLayoutKind layoutKind)
         {
@@ -1014,6 +998,31 @@ namespace Internal.TypeSystem
             }
 
             return NotHA;
+        }
+
+        public override bool ComputeIsUnsafeValueType(DefType type)
+        {
+            if (!type.IsValueType)
+                return false;
+
+            MetadataType metadataType = (MetadataType)type;
+            if (metadataType.HasCustomAttribute("System.Runtime.CompilerServices", "UnsafeValueTypeAttribute"))
+                return true;
+
+            foreach (FieldDesc field in metadataType.GetFields())
+            {
+                if (field.IsStatic)
+                    continue;
+
+                TypeDesc fieldType = field.FieldType;
+                if (!fieldType.IsValueType || fieldType.IsPrimitive)
+                    continue;
+
+                if (((DefType)fieldType).IsUnsafeValueType)
+                    return true;
+            }
+
+            return false;
         }
 
         private struct SizeAndAlignment

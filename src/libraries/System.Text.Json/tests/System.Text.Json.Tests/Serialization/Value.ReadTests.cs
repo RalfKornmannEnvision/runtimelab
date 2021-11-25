@@ -309,6 +309,8 @@ namespace System.Text.Json.Serialization.Tests
             Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TimeSpan>(unexpectedString));
             Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TimeSpan?>(unexpectedString));
 
+            Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Version>(unexpectedString));
+
             Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<string>("1"));
 
             Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<char>("1"));
@@ -318,24 +320,53 @@ namespace System.Text.Json.Serialization.Tests
             Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Enum>(unexpectedString));
         }
 
-        [Fact]
-        public static void ReadVersion()
+        [Theory]
+        [InlineData("1.2")]
+        [InlineData("\\u0031\\u002e\\u0032", "1.2")]
+        [InlineData("1.2.3")]
+        [InlineData("\\u0031\\u002e\\u0032\\u002e\\u0033", "1.2.3")]
+        [InlineData("1.2.3.4")]
+        [InlineData("\\u0031\\u002e\\u0032\\u002e\\u0033\\u002e\\u0034", "1.2.3.4")]
+        [InlineData("2147483647.2147483647")]
+        [InlineData("\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037",
+            "2147483647.2147483647")]
+        [InlineData("2147483647.2147483647.2147483647")]
+        [InlineData("\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037",
+            "2147483647.2147483647.2147483647")]
+        [InlineData("2147483647.2147483647.2147483647.2147483647")]
+        [InlineData("\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037\\u002e\\u0032\\u0031\\u0034\\u0037\\u0034\\u0038\\u0033\\u0036\\u0034\\u0037",
+            "2147483647.2147483647.2147483647.2147483647")]
+        public static void Version_Read_Success(string json, string? actual = null)
         {
-            Version version;
+            actual ??= json;
+            Version value = JsonSerializer.Deserialize<Version>($"\"{json}\"");
 
-            version = JsonSerializer.Deserialize<Version>(@"""1.2""");
-            Assert.Equal(new Version(1, 2), version);
+            Assert.Equal(Version.Parse(actual), value);
+        }
 
-            version = JsonSerializer.Deserialize<Version>(@"""1.2.3""");
-            Assert.Equal(new Version(1, 2, 3), version);
+        [Theory]
+        [InlineData("")]
+        [InlineData("     ")]
+        [InlineData(" ")]
+        [InlineData("2147483648.2147483648.2147483648.2147483648")] //int.MaxValue + 1
+        [InlineData("2147483647.2147483647.2147483647.21474836477")] // Slightly bigger in size than max length of Version
+        [InlineData("-2147483648.-2147483648")]
+        [InlineData("-2147483648.-2147483648.-2147483648")]
+        [InlineData("-2147483648.-2147483648.-2147483648.-2147483648")]
+        [InlineData("1.-1")]
+        [InlineData("1")]
+        [InlineData("   1.2.3.4")] //Valid but has leading whitespace
+        [InlineData("1.2.3.4    ")] //Valid but has trailing whitespace
+        [InlineData("  1.2.3.4  ")] //Valid but has trailing and leading whitespaces
+        [InlineData("{}", false)]
+        [InlineData("[]", false)]
+        [InlineData("true", false)]
+        public static void Version_Read_Failure(string json, bool addQuotes = true)
+        {
+            if (addQuotes)
+                json = $"\"{json}\"";
 
-            version = JsonSerializer.Deserialize<Version>(@"""1.2.3.4""");
-            Assert.Equal(new Version(1, 2, 3, 4), version);
-
-            version = JsonSerializer.Deserialize<Version>("null");
-            Assert.Null(version);
-
-            Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Version>(@""""""));
+            Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<Version>(json));
         }
 
         [Fact]
@@ -465,6 +496,20 @@ namespace System.Text.Json.Serialization.Tests
 
             Assert.Equal(TimeSpan.Parse(actual ?? json), value);
             Assert.Equal(value, JsonConvert.DeserializeObject<TimeSpan>($"\"{json}\""));
+        }
+
+        [Fact]
+        public static void TimeSpan_Read_Nullable_Tests()
+        {
+            TimeSpan? value = JsonSerializer.Deserialize<TimeSpan?>("null");
+            Assert.False(value.HasValue);
+
+            value = JsonSerializer.Deserialize<TimeSpan?>("\"23:59:59\"");
+            Assert.True(value.HasValue);
+            Assert.Equal(TimeSpan.Parse("23:59:59"), value);
+            Assert.Equal(value, JsonConvert.DeserializeObject<TimeSpan>("\"23:59:59\""));
+
+            Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TimeSpan>("null"));
         }
 
         [Fact]

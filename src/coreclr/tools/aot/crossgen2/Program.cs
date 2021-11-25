@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -46,36 +47,42 @@ namespace ILCompiler
         {
         }
 
-        private void InitializeDefaultOptions()
+        public static void ComputeDefaultOptions(out TargetOS os, out TargetArchitecture arch)
         {
-            // We could offer this as a command line option, but then we also need to
-            // load a different RyuJIT, so this is a future nice to have...
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                _targetOS = TargetOS.Windows;
+                os = TargetOS.Windows;
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                _targetOS = TargetOS.Linux;
+                os = TargetOS.Linux;
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                _targetOS = TargetOS.OSX;
+                os = TargetOS.OSX;
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.FreeBSD))
+                os = TargetOS.FreeBSD;
             else
                 throw new NotImplementedException();
 
             switch (RuntimeInformation.ProcessArchitecture)
             {
                 case Architecture.X86:
-                    _targetArchitecture = TargetArchitecture.X86;
+                    arch = TargetArchitecture.X86;
                     break;
                 case Architecture.X64:
-                    _targetArchitecture = TargetArchitecture.X64;
+                    arch = TargetArchitecture.X64;
                     break;
                 case Architecture.Arm:
-                    _targetArchitecture = TargetArchitecture.ARM;
+                    arch = TargetArchitecture.ARM;
                     break;
                 case Architecture.Arm64:
-                    _targetArchitecture = TargetArchitecture.ARM64;
+                    arch = TargetArchitecture.ARM64;
                     break;
                 default:
                     throw new NotImplementedException();
             }
+
+        }
+
+        private void InitializeDefaultOptions()
+        {
+            ComputeDefaultOptions(out _targetOS, out _targetArchitecture);
         }
 
         private void ProcessCommandLine(string[] args)
@@ -151,6 +158,8 @@ namespace ILCompiler
                     "hotcold" => ReadyToRunMethodLayoutAlgorithm.HotCold,
                     "hotwarmcold" => ReadyToRunMethodLayoutAlgorithm.HotWarmCold,
                     "callfrequency" => ReadyToRunMethodLayoutAlgorithm.CallFrequency,
+                    "pettishansen" => ReadyToRunMethodLayoutAlgorithm.PettisHansen,
+                    "random" => ReadyToRunMethodLayoutAlgorithm.Random,
                     _ => throw new CommandLineException(SR.InvalidMethodLayout)
                 };
             }
@@ -167,6 +176,26 @@ namespace ILCompiler
 
         }
 
+        public static TargetArchitecture GetTargetArchitectureFromArg(string archArg, out bool armelAbi)
+        {
+            armelAbi = false;
+            if (archArg.Equals("x86", StringComparison.OrdinalIgnoreCase))
+                return TargetArchitecture.X86;
+            else if (archArg.Equals("x64", StringComparison.OrdinalIgnoreCase))
+                return  TargetArchitecture.X64;
+            else if (archArg.Equals("arm", StringComparison.OrdinalIgnoreCase))
+                return  TargetArchitecture.ARM;
+            else if (archArg.Equals("armel", StringComparison.OrdinalIgnoreCase))
+            {
+                armelAbi = true;
+                return TargetArchitecture.ARM;
+            }
+            else if (archArg.Equals("arm64", StringComparison.OrdinalIgnoreCase))
+                return TargetArchitecture.ARM64;
+            else
+                throw new CommandLineException(SR.TargetArchitectureUnsupported);
+        }
+
         private void ConfigureTarget()
         {
             //
@@ -174,21 +203,7 @@ namespace ILCompiler
             //
             if (_commandLineOptions.TargetArch != null)
             {
-                if (_commandLineOptions.TargetArch.Equals("x86", StringComparison.OrdinalIgnoreCase))
-                    _targetArchitecture = TargetArchitecture.X86;
-                else if (_commandLineOptions.TargetArch.Equals("x64", StringComparison.OrdinalIgnoreCase))
-                    _targetArchitecture = TargetArchitecture.X64;
-                else if (_commandLineOptions.TargetArch.Equals("arm", StringComparison.OrdinalIgnoreCase))
-                    _targetArchitecture = TargetArchitecture.ARM;
-                else if (_commandLineOptions.TargetArch.Equals("armel", StringComparison.OrdinalIgnoreCase))
-                {
-                    _targetArchitecture = TargetArchitecture.ARM;
-                    _armelAbi = true;
-                }
-                else if (_commandLineOptions.TargetArch.Equals("arm64", StringComparison.OrdinalIgnoreCase))
-                    _targetArchitecture = TargetArchitecture.ARM64;
-                else
-                    throw new CommandLineException(SR.TargetArchitectureUnsupported);
+                _targetArchitecture = GetTargetArchitectureFromArg(_commandLineOptions.TargetArch, out _armelAbi);
             }
             if (_commandLineOptions.TargetOS != null)
             {
@@ -198,6 +213,8 @@ namespace ILCompiler
                     _targetOS = TargetOS.Linux;
                 else if (_commandLineOptions.TargetOS.Equals("osx", StringComparison.OrdinalIgnoreCase))
                     _targetOS = TargetOS.OSX;
+                else if (_commandLineOptions.TargetOS.Equals("freebsd", StringComparison.OrdinalIgnoreCase))
+                    _targetOS = TargetOS.FreeBSD;
                 else
                     throw new CommandLineException(SR.TargetOSUnsupported);
             }
@@ -223,11 +240,6 @@ namespace ILCompiler
             if (_commandLineOptions.InstructionSet != null)
             {
                 List<string> instructionSetParams = new List<string>();
-
-                // At this time, instruction sets may only be specified with --input-bubble, as
-                // we do not yet have a stable ABI for all vector parameter/return types.
-                if (!_commandLineOptions.InputBubble)
-                    throw new CommandLineException(SR.InstructionSetWithoutInputBubble);
 
                 // Normalize instruction set format to include implied +.
                 string[] instructionSetParamsInput = _commandLineOptions.InstructionSet.Split(",");
@@ -318,6 +330,9 @@ namespace ILCompiler
 
             if (_commandLineOptions.OutputFilePath == null && !_commandLineOptions.OutNearInput)
                 throw new CommandLineException(SR.MissingOutputFile);
+
+            if (_commandLineOptions.SingleFileCompilation && !_commandLineOptions.OutNearInput)
+                throw new CommandLineException(SR.MissingOutNearInput);
 
             ConfigureTarget();
             InstructionSetSupport instructionSetSupport = ConfigureInstructionSetSupport();
@@ -488,10 +503,25 @@ namespace ILCompiler
                         bool singleCompilationVersionBubbleIncludesCoreLib = versionBubbleIncludesCoreLib || (String.Compare(inputFile.Key, "System.Private.CoreLib", StringComparison.OrdinalIgnoreCase) == 0);
 
                         typeSystemContext = new ReadyToRunCompilerContext(targetDetails, genericsMode, singleCompilationVersionBubbleIncludesCoreLib, _typeSystemContext);
+                        typeSystemContext.InputFilePaths = singleCompilationInputFilePaths;
+                        typeSystemContext.ReferenceFilePaths = _referenceFilePaths;
                         typeSystemContext.SetSystemModule((EcmaModule)typeSystemContext.GetModuleForSimpleName(systemModuleName));
                     }
 
                     RunSingleCompilation(singleCompilationInputFilePaths, instructionSetSupport, compositeRootPath, unrootedInputFilePaths, singleCompilationVersionBubbleModulesHash, typeSystemContext);
+                }
+
+                // In case of inputbubble ni.dll are created as ni.dll.tmp in order to not interfere with crossgen2, move them all to ni.dll
+                // See https://github.com/dotnet/runtime/issues/55663#issuecomment-898161751 for more details
+                if (_commandLineOptions.InputBubble)
+                {
+                    foreach (var inputFile in inputFilePaths)
+                    {
+                        var tmpOutFile = inputFile.Value.Replace(".dll", ".ni.dll.tmp");
+                        var outFile = inputFile.Value.Replace(".dll", ".ni.dll");
+                        Console.WriteLine($@"Moving R2R PE file: {tmpOutFile} to {outFile}");
+                        System.IO.File.Move(tmpOutFile, outFile);
+                    }
                 }
             }
             else
@@ -507,7 +537,21 @@ namespace ILCompiler
             //
             // Initialize output filename
             //
-            var outFile = _commandLineOptions.OutNearInput ? inFilePaths.First().Value.Replace(".dll", ".ni.dll") : _commandLineOptions.OutputFilePath;
+            string inFilePath = inFilePaths.First().Value;
+            string inputFileExtension = Path.GetExtension(inFilePath);
+            string nearOutFilePath = inputFileExtension switch
+            {
+                ".dll" => Path.ChangeExtension(inFilePath,
+                    _commandLineOptions.SingleFileCompilation && _commandLineOptions.InputBubble
+                        ? ".ni.dll.tmp"
+                        : ".ni.dll"),
+                ".exe" => Path.ChangeExtension(inFilePath,
+                    _commandLineOptions.SingleFileCompilation && _commandLineOptions.InputBubble
+                        ? ".ni.exe.tmp"
+                        : ".ni.exe"),
+                _ => throw new CommandLineException(string.Format(SR.UnsupportedInputFileExtension, inputFileExtension))
+            };
+            string outFile = _commandLineOptions.OutNearInput ? nearOutFilePath : _commandLineOptions.OutputFilePath;
 
             using (PerfEventSource.StartStopEvents.CompilationEvents())
             {
@@ -653,13 +697,13 @@ namespace ILCompiler
 
                     if (_commandLineOptions.CompositeKeyFile != null)
                     {
-                        ImmutableArray<byte> compositeStrongNameKey = File.ReadAllBytes(_commandLineOptions.CompositeKeyFile).ToImmutableArray();
+                        byte[] compositeStrongNameKey = File.ReadAllBytes(_commandLineOptions.CompositeKeyFile);
                         if (!IsValidPublicKey(compositeStrongNameKey))
                         {
                             throw new Exception(string.Format(SR.ErrorCompositeKeyFileNotPublicKey));
                         }
 
-                        compositeImageSettings.PublicKey = compositeStrongNameKey;
+                        compositeImageSettings.PublicKey = compositeStrongNameKey.ToImmutableArray();
                     }
 
                     //
@@ -911,7 +955,7 @@ namespace ILCompiler
             }
         }
 
-        private static readonly ImmutableArray<byte> s_ecmaKey = ImmutableArray.Create(new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0 });
+        private static ReadOnlySpan<byte> s_ecmaKey => new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0 };
 
         private const int SnPublicKeyBlobSize = 13;
 
@@ -925,15 +969,21 @@ namespace ILCompiler
         // From StrongNameInternal.cpp
         // Checks to see if a public key is a valid instance of a PublicKeyBlob as
         // defined in StongName.h
-        internal static bool IsValidPublicKey(ImmutableArray<byte> blob)
+        internal static bool IsValidPublicKey(byte[] blob)
         {
             // The number of public key bytes must be at least large enough for the header and one byte of data.
-            if (blob.IsDefault || blob.Length < s_publicKeyHeaderSize + 1)
+            if (blob.Length < s_publicKeyHeaderSize + 1)
             {
                 return false;
             }
 
-            var blobReader = new BinaryReader(new MemoryStream(blob.ToArray()));
+            // Check for the ECMA key, which does not obey the invariants checked below.
+            if (blob.AsSpan().SequenceEqual(s_ecmaKey))
+            {
+                return true;
+            }
+
+            var blobReader = new BinaryReader(new MemoryStream(blob, writable: false));
 
             // Signature algorithm ID
             var sigAlgId = blobReader.ReadUInt32();
@@ -948,12 +998,6 @@ namespace ILCompiler
             if (blob.Length != s_publicKeyHeaderSize + publicKeySize)
             {
                 return false;
-            }
-
-            // Check for the ECMA key, which does not obey the invariants checked below.
-            if (System.Linq.Enumerable.SequenceEqual(blob, s_ecmaKey))
-            {
-                return true;
             }
 
             // The public key must be in the wincrypto PUBLICKEYBLOB format
@@ -1001,6 +1045,7 @@ namespace ILCompiler
                 return 1;
             }
 #endif
+
         }
     }
 }

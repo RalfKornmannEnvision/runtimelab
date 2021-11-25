@@ -54,11 +54,16 @@ namespace ILCompiler.DependencyAnalysis
         {
             DependencyList result = new DependencyList();
 
-            result.Add(new DependencyListEntry(GetGCStaticEETypeNode(factory), "ThreadStatic EEType"));
+            result.Add(new DependencyListEntry(GetGCStaticEETypeNode(factory), "ThreadStatic MethodTable"));
 
             if (factory.PreinitializationManager.HasEagerStaticConstructor(_type))
             {
                 result.Add(new DependencyListEntry(factory.EagerCctorIndirection(_type.GetStaticConstructor()), "Eager .cctor"));
+            }
+
+            if (_type.Module.GetGlobalModuleType().GetStaticConstructor() is MethodDesc moduleCctor)
+            {
+                result.Add(factory.MethodEntrypoint(moduleCctor), "Static base in a module with initializer");
             }
 
             EETypeNode.AddDependenciesForStaticsNode(factory, _type, ref result);

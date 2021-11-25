@@ -180,12 +180,12 @@ namespace System.Threading
             GC.SuppressFinalize(this);
         }
 
-        private void FinishUnregisteringAsync(object waitObject)
+        private void FinishUnregisteringAsync(object? waitObject)
         {
             FinishUnregistering();
 
             // Signal the provided wait object
-            SafeWaitHandle safeWaitHandle = (SafeWaitHandle)waitObject;
+            SafeWaitHandle? safeWaitHandle = (SafeWaitHandle?)waitObject;
 
             if ((safeWaitHandle != null) && !safeWaitHandle.IsInvalid)
             {
@@ -233,7 +233,7 @@ namespace System.Threading
 
     public static partial class ThreadPool
     {
-        internal const bool EnableWorkerTracking = false;
+        internal const bool IsWorkerTrackingEnabledInConfig = false;
 
         internal const bool SupportsTimeSensitiveWorkItems = false; // the timer currently doesn't queue time-sensitive work
 

@@ -27,6 +27,7 @@ namespace System.Runtime.CompilerServices
             throw new PlatformNotSupportedException();
         }
 
+        [RequiresUnreferencedCode("Trimmer can't guarantee existence of class constructor")]
         public static void RunClassConstructor(RuntimeTypeHandle type)
         {
             if (type.IsNull)
@@ -217,16 +218,16 @@ namespace System.Runtime.CompilerServices
         /// <param name="type">Type associated with the allocated memory.</param>
         /// <param name="size">Amount of memory in bytes to allocate.</param>
         /// <returns>The allocated memory</returns>
-        public static IntPtr AllocateTypeAssociatedMemory(Type type, int size)
+        public static unsafe IntPtr AllocateTypeAssociatedMemory(Type type, int size)
         {
-            if (type is null || !type.IsRuntimeImplemented())
+            if (type is not RuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(type));
 
             if (size < 0)
                 throw new ArgumentOutOfRangeException(nameof(size));
 
             // We don't support unloading; the memory will never be freed.
-            return Marshal.AllocHGlobal(size);
+            return (IntPtr)NativeMemory.Alloc((uint)size);
         }
 
         public static void PrepareDelegate(Delegate d)
@@ -234,9 +235,9 @@ namespace System.Runtime.CompilerServices
         }
 
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2059:UnrecognizedReflectionPattern",
-            Justification = "We keep class constructors of all types with an EEType")]
+            Justification = "We keep class constructors of all types with an MethodTable")]
         [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2072:UnrecognizedReflectionPattern",
-            Justification = "Constructed EEType of a Nullable forces a constructed EEType of the element type")]
+            Justification = "Constructed MethodTable of a Nullable forces a constructed MethodTable of the element type")]
         public static object GetUninitializedObject(
             // This API doesn't call any constructors, but the type needs to be seen as constructed.
             // A type is seen as constructed if a constructor is kept.
@@ -251,7 +252,7 @@ namespace System.Runtime.CompilerServices
                 throw new ArgumentNullException(nameof(type), SR.ArgumentNull_Type);
             }
 
-            if (!type.IsRuntimeImplemented())
+            if (type is not RuntimeType)
             {
                 throw new SerializationException(SR.Format(SR.Serialization_InvalidType, type));
             }
@@ -306,7 +307,7 @@ namespace System.Runtime.CompilerServices
 
             // Triggering the .cctor here is slightly different than desktop/CoreCLR, which
             // decide based on BeforeFieldInit, but we don't want to include BeforeFieldInit
-            // in EEType just for this API to behave slightly differently.
+            // in MethodTable just for this API to behave slightly differently.
             RunClassConstructor(type.TypeHandle);
 
             return RuntimeImports.RhNewObject(eeTypePtr);

@@ -25,8 +25,6 @@ using System.Globalization;
 
 using EETypeElementType = Internal.Runtime.EETypeElementType;
 
-using EnumInfo = Internal.Runtime.Augments.EnumInfo;
-
 namespace Internal.Reflection.Augments
 {
     [System.Runtime.CompilerServices.ReflectionBlocked]
@@ -48,7 +46,7 @@ namespace Internal.Reflection.Augments
             EETypePtr eeType;
             if (!type.TryGetEEType(out eeType))
             {
-                // Type exists in metadata only. Aside from the enums, there is no chance a type with a TypeCode would not have an EEType,
+                // Type exists in metadata only. Aside from the enums, there is no chance a type with a TypeCode would not have an MethodTable,
                 // so if it's not an enum, return the default.
                 if (!type.IsEnum)
                     return TypeCode.Object;
@@ -144,7 +142,7 @@ namespace Internal.Reflection.Augments
             Type type, BindingFlags bindingAttr, Binder binder, object[] args, CultureInfo culture, object[] activationAttributes);
 
         // V2 api: Creates open or closed delegates to static or instance methods - relaxed signature checking allowed.
-        public abstract Delegate CreateDelegate(Type type, object firstArgument, MethodInfo method, bool throwOnBindFailure);
+        public abstract Delegate CreateDelegate(Type type, object? firstArgument, MethodInfo method, bool throwOnBindFailure);
 
         // V1 api: Creates open delegates to static or instance methods - relaxed signature checking allowed.
         public abstract Delegate CreateDelegate(Type type, MethodInfo method, bool throwOnBindFailure);

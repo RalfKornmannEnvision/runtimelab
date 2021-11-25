@@ -1,5 +1,5 @@
-// Copyright (c) .NET Foundation. All rights reserved.
-// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
 
 using System;
 using System.Collections.Generic;
@@ -171,7 +171,8 @@ namespace Microsoft.Extensions.Configuration.Test
             Assert.True(provider5.IsDisposed);
         }
 
-        [Fact]
+        // Moq heavily utilizes RefEmit, which does not work on most aot workloads
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsReflectionEmitSupported))]
         public void DisposesChangeTokenRegistrationsOnDispose()
         {
             var changeToken = new TestChangeToken();
@@ -189,7 +190,8 @@ namespace Microsoft.Extensions.Configuration.Test
             Assert.Empty(changeToken.Callbacks);
         }
 
-        [Fact]
+        // Moq heavily utilizes RefEmit, which does not work on most aot workloads
+        [ConditionalFact(typeof(PlatformDetection), nameof(PlatformDetection.IsReflectionEmitSupported))]
         public void DisposesChangeTokenRegistrationsOnRemoval()
         {
             var changeToken = new TestChangeToken();
@@ -845,7 +847,7 @@ namespace Microsoft.Extensions.Configuration.Test
             var token2 = config.GetReloadToken();
             var hasChanged3 = token2.HasChanged;
 
-            // 
+            //
             // Assert
             Assert.False(hasChanged1);
             Assert.True(hasChanged2);

@@ -38,6 +38,17 @@ namespace ILCompiler.DependencyAnalysis
                 context, null, dictionarySlot * factory.Target.PointerSize, 0, AddrModeSize.Int64);
             encoder.EmitMOV(result, ref loadEntry);
 
+            // If there's any invalid entries, we need to test for them
+            //
+            // Only do this in relocsOnly to make it easier to weed out bugs - the _hasInvalidEntries
+            // flag can change over the course of compilation and the bad slot helper dependency
+            // should be reported by someone else - the system should not rely on it coming from here.
+            if (!relocsOnly && _hasInvalidEntries)
+            {
+                encoder.EmitCompareToZero(result);
+                encoder.EmitJE(GetBadSlotHelper(factory));
+            }
+
             switch (lookup.LookupResultReferenceType(factory))
             {
                 case GenericLookupResultReferenceType.Indirect:
@@ -230,7 +241,7 @@ namespace ILCompiler.DependencyAnalysis
     {
         protected override void EmitLoadGenericContext(NodeFactory factory, ref X64Emitter encoder, bool relocsOnly)
         {
-            // We start with context register pointing to the EEType
+            // We start with context register pointing to the MethodTable
             Register contextRegister = GetContextRegister(ref encoder);
 
             // Locate the VTable slot that points to the dictionary

@@ -23,6 +23,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\Common\Compiler\Logging\CompilerGeneratedState.cs">
+      <Link>Compiler\Logging\CompilerGeneratedState.cs</Link>
+    </Compile>
     <Compile Include="..\..\Common\Compiler\Logging\MessageContainer.cs">
       <Link>Compiler\Logging\MessageContainer.cs</Link>
     </Compile>
@@ -199,6 +202,7 @@
     <Compile Include="Compiler\DependencyAnalysis\IndirectionExtensions.cs" />
     <Compile Include="Compiler\DependencyAnalysis\InterfaceDispatchCellSectionNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\MethodExceptionHandlingInfoNode.cs" />
+    <Compile Include="Compiler\DependencyAnalysis\ModuleInitializerListNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ObjectGetTypeFlowDependenciesNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReflectionMethodBodyScanner.cs" />
     <Compile Include="Compiler\DependencyAnalysis\StructMarshallingDataNode.cs" />
@@ -224,9 +228,17 @@
     <Compile Include="Compiler\FeatureSwitchManager.cs" />
     <Compile Include="Compiler\GeneratingMetadataManager.cs" />
     <Compile Include="Compiler\GenericRootProvider.cs" />
+    <Compile Include="Compiler\LazyGenerics\ModuleCycleInfo.cs" />
+    <Compile Include="Compiler\LazyGenerics\Graph.cs" />
+    <Compile Include="Compiler\LazyGenerics\Graph.Cycles.cs" />
+    <Compile Include="Compiler\LazyGenerics\Graph.Vertex.cs" />
+    <Compile Include="Compiler\LazyGenerics\GraphBuilder.cs" />
+    <Compile Include="Compiler\LazyGenerics\GraphBuilder.ForEach.cs" />
+    <Compile Include="Compiler\LazyGenerics\GraphBuilder.MethodCall.cs" />
     <Compile Include="Compiler\HardwareIntrinsicHelpers.Aot.cs" />
     <Compile Include="Compiler\IInliningPolicy.cs" />
     <Compile Include="Compiler\ManifestResourceBlockingPolicy.cs" />
+    <Compile Include="Compiler\MethodImportationErrorProvider.cs" />
     <Compile Include="Compiler\NoMetadataBlockingPolicy.cs" />
     <Compile Include="Compiler\DependencyAnalysis\FrozenObjectNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\GCStaticsPreInitDataNode.cs" />
@@ -281,7 +293,6 @@
     <Compile Include="Compiler\DependencyAnalysis\GenericCompositionNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\GenericDefinitionEETypeNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\HelperEntrypoint.cs" />
-    <Compile Include="Compiler\DependencyAnalysis\IndirectionNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReflectionInvokeMapNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\ReflectionVirtualInvokeMapNode.cs" />
     <Compile Include="Compiler\DependencyAnalysis\GenericDictionaryNode.cs" />
@@ -406,14 +417,14 @@
     <Compile Include="..\..\Common\Internal\Runtime\CanonTypeKind.cs">
       <Link>Common\CanonTypeKind.cs</Link>
     </Compile>
-    <Compile Include="..\..\Common\Internal\Runtime\EEType.Constants.cs">
-      <Link>Common\EEType.Constants.cs</Link>
+    <Compile Include="..\..\Common\Internal\Runtime\MethodTable.Constants.cs">
+      <Link>Common\MethodTable.Constants.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\Internal\Runtime\EETypeOptionalFieldsBuilder.cs">
       <Link>Common\EETypeOptionalFieldsBuilder.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\Internal\Runtime\EETypeBuilderHelpers.cs">
-      <Link>Common\EEType.cs</Link>
+      <Link>Common\EETypeBuilderHelpers.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\Internal\Runtime\InterfaceDispatchCellCachePointerFlags.cs">
       <Link>Common\InterfaceDispatchCellCachePointerFlags.cs</Link>

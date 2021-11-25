@@ -67,7 +67,7 @@ namespace Internal.Runtime.CompilerHelpers
             // the first class constructor to prevent them calling into another uninitialized module
             for (int i = 0; i < modules.Length; i++)
             {
-                InitializeEagerClassConstructorsForModule(modules[i]);
+                RunInitializers(modules[i], ReadyToRunSectionType.EagerCctor);
             }
         }
 
@@ -185,26 +185,22 @@ namespace Internal.Runtime.CompilerHelpers
             }
         }
 
-        private static unsafe void InitializeEagerClassConstructorsForModule(TypeManagerHandle typeManager)
+        internal static void RunModuleInitializers()
         {
-            int length;
-
-            // Run eager class constructors if any are present
-            IntPtr eagerClassConstructorSection = RuntimeImports.RhGetModuleSection(typeManager, ReadyToRunSectionType.EagerCctor, out length);
-            if (eagerClassConstructorSection != IntPtr.Zero)
+            for (int i = 0; i < s_moduleCount; i++)
             {
-                Debug.Assert(length % IntPtr.Size == 0);
-                RunEagerClassConstructors(eagerClassConstructorSection, length);
+                RunInitializers(s_modules[i], ReadyToRunSectionType.ModuleInitializerList);
             }
         }
 
-        private static unsafe void RunEagerClassConstructors(IntPtr cctorTableStart, int length)
+        private static unsafe void RunInitializers(TypeManagerHandle typeManager, ReadyToRunSectionType section)
         {
-            IntPtr cctorTableEnd = (IntPtr)((byte*)cctorTableStart + length);
-
-            for (IntPtr* tab = (IntPtr*)cctorTableStart; tab < (IntPtr*)cctorTableEnd; tab++)
+            var initializers = (delegate*<void>*)RuntimeImports.RhGetModuleSection(typeManager, section, out int length);
+            Debug.Assert(length % IntPtr.Size == 0);
+            int count = length / IntPtr.Size;
+            for (int i = 0; i < count; i++)
             {
-                ((delegate*<void>)*tab)();
+                initializers[i]();
             }
         }
 
@@ -227,7 +223,7 @@ namespace Internal.Runtime.CompilerHelpers
                 nint blockAddr = *pBlock;
                 if ((blockAddr & GCStaticRegionConstants.Uninitialized) == GCStaticRegionConstants.Uninitialized)
                 {
-                    object obj = null;
+                    object? obj = null;
                     RuntimeImports.RhAllocateNewObject(
                         new IntPtr(blockAddr & ~GCStaticRegionConstants.Mask),
                         (uint)GC_ALLOC_FLAGS.GC_ALLOC_PINNED_OBJECT_HEAP,

@@ -1309,7 +1309,7 @@ Object* Thread::GetThreadStaticStorageForModule(uint32_t moduleIndex)
     return NULL;
 }
 
-Boolean Thread::SetThreadStaticStorageForModule(Object * pStorage, uint32_t moduleIndex)
+bool Thread::SetThreadStaticStorageForModule(Object * pStorage, uint32_t moduleIndex)
 {
     // Grow thread local storage if needed.
     if (m_numThreadLocalModuleStatics <= moduleIndex)
@@ -1317,13 +1317,13 @@ Boolean Thread::SetThreadStaticStorageForModule(Object * pStorage, uint32_t modu
         uint32_t newSize = moduleIndex + 1;
         if (newSize < moduleIndex)
         {
-            return FALSE;
+            return false;
         }
 
         PTR_PTR_VOID pThreadLocalModuleStatics = new (nothrow) PTR_VOID[newSize];
         if (pThreadLocalModuleStatics == NULL)
         {
-            return FALSE;
+            return false;
         }
 
         memset(&pThreadLocalModuleStatics[m_numThreadLocalModuleStatics], 0, sizeof(PTR_VOID) * (newSize - m_numThreadLocalModuleStatics));
@@ -1347,12 +1347,12 @@ Boolean Thread::SetThreadStaticStorageForModule(Object * pStorage, uint32_t modu
         void* threadStaticsStorageHandle = RhpHandleAlloc(pStorage, 2 /* Normal */);
         if (threadStaticsStorageHandle == NULL)
         {
-            return FALSE;
+            return false;
         }
         m_pThreadLocalModuleStatics[moduleIndex] = threadStaticsStorageHandle;
     }
 
-    return TRUE;
+    return true;
 }
 
 COOP_PINVOKE_HELPER(Object*, RhGetThreadStaticStorageForModule, (uint32_t moduleIndex))
@@ -1361,10 +1361,10 @@ COOP_PINVOKE_HELPER(Object*, RhGetThreadStaticStorageForModule, (uint32_t module
     return pCurrentThread->GetThreadStaticStorageForModule(moduleIndex);
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhSetThreadStaticStorageForModule, (Array * pStorage, uint32_t moduleIndex))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhSetThreadStaticStorageForModule, (Array * pStorage, uint32_t moduleIndex))
 {
     Thread * pCurrentThread = ThreadStore::RawGetCurrentThread();
-    return pCurrentThread->SetThreadStaticStorageForModule((Object*)pStorage, moduleIndex);
+    FC_RETURN_BOOL(pCurrentThread->SetThreadStaticStorageForModule((Object*)pStorage, moduleIndex));
 }
 
 // This is function is used to quickly query a value that can uniquely identify a thread
@@ -1394,8 +1394,7 @@ EXTERN_C NOINLINE void FASTCALL RhpReversePInvokeAttachOrTrapThread2(ReversePInv
 // PInvoke
 //
 
-// Standard calling convention variant of RhpReversePInvoke
-COOP_PINVOKE_HELPER(void, RhpReversePInvoke2, (ReversePInvokeFrame * pFrame))
+COOP_PINVOKE_HELPER(void, RhpReversePInvoke, (ReversePInvokeFrame * pFrame))
 {
     Thread * pCurThread = ThreadStore::RawGetCurrentThread();
     pFrame->m_savedThread = pCurThread;
@@ -1405,8 +1404,7 @@ COOP_PINVOKE_HELPER(void, RhpReversePInvoke2, (ReversePInvokeFrame * pFrame))
     RhpReversePInvokeAttachOrTrapThread2(pFrame);
 }
 
-// Standard calling convention variant of RhpReversePInvokeReturn
-COOP_PINVOKE_HELPER(void, RhpReversePInvokeReturn2, (ReversePInvokeFrame * pFrame))
+COOP_PINVOKE_HELPER(void, RhpReversePInvokeReturn, (ReversePInvokeFrame * pFrame))
 {
     pFrame->m_savedThread->InlineReversePInvokeReturn(pFrame);
 }

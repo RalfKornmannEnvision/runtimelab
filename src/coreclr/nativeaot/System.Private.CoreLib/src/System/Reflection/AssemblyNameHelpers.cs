@@ -22,9 +22,11 @@ namespace System.Reflection
 
             AssemblyNameFlags flags = assemblyName.Flags;
             AssemblyContentType contentType = assemblyName.ContentType;
+#pragma warning disable SYSLIB0037 // AssemblyName.ProcessorArchitecture is obsolete
             ProcessorArchitecture processorArchitecture = assemblyName.ProcessorArchitecture;
+#pragma warning restore SYSLIB0037
             AssemblyNameFlags combinedFlags = CombineAssemblyNameFlags(flags, contentType, processorArchitecture);
-            byte[] pkOriginal;
+            byte[]? pkOriginal;
             if (0 != (flags & AssemblyNameFlags.PublicKey))
                 pkOriginal = assemblyName.GetPublicKey();
             else
@@ -32,7 +34,7 @@ namespace System.Reflection
 
             // AssemblyName's PKT property getters do NOT copy the array before giving it out. Make our own copy
             // as the original is wide open to tampering by anyone.
-            byte[] pkCopy = null;
+            byte[]? pkCopy = null;
             if (pkOriginal != null)
             {
                 pkCopy = new byte[pkOriginal.Length];

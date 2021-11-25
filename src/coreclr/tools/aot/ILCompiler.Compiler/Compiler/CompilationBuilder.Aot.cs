@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System;
+
 using Internal.JitInterface;
 
 namespace ILCompiler
@@ -17,10 +19,12 @@ namespace ILCompiler
         protected DictionaryLayoutProvider _dictionaryLayoutProvider = new LazyDictionaryLayoutProvider();
         protected DebugInformationProvider _debugInformationProvider = new DebugInformationProvider();
         protected DevirtualizationManager _devirtualizationManager = new DevirtualizationManager();
+        protected MethodImportationErrorProvider _methodImportationErrorProvider = new MethodImportationErrorProvider();
         protected IInliningPolicy _inliningPolicy;
         protected bool _methodBodyFolding;
         protected bool _singleThreaded;
         protected InstructionSetSupport _instructionSetSupport;
+        protected SecurityMitigationOptions _mitigationOptions;
 
         partial void InitializePartial()
         {
@@ -76,6 +80,12 @@ namespace ILCompiler
             return this;
         }
 
+        public CompilationBuilder UseSecurityMitigationOptions(SecurityMitigationOptions options)
+        {
+            _mitigationOptions = options;
+            return this;
+        }
+
         public CompilationBuilder UseMethodBodyFolding(bool enable)
         {
             _methodBodyFolding = enable;
@@ -94,6 +104,12 @@ namespace ILCompiler
             return this;
         }
 
+        public CompilationBuilder UseMethodImportationErrorProvider(MethodImportationErrorProvider errorProvider)
+        {
+            _methodImportationErrorProvider = errorProvider;
+            return this;
+        }
+
         protected PreinitializationManager GetPreinitializationManager()
         {
             if (_preinitializationManager == null)
@@ -105,5 +121,11 @@ namespace ILCompiler
         {
             return new ILScannerBuilder(_context, compilationGroup ?? _compilationGroup, _nameMangler, GetILProvider(), GetPreinitializationManager());
         }
+    }
+
+    [Flags]
+    public enum SecurityMitigationOptions
+    {
+        ControlFlowGuardAnnotations = 0x0001,
     }
 }

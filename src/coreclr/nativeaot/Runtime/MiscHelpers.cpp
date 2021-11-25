@@ -30,10 +30,10 @@
 #include "gcrhinterface.h"
 #include "shash.h"
 #include "TypeManager.h"
-#include "eetype.h"
+#include "MethodTable.h"
 #include "ObjectLayout.h"
 #include "slist.inl"
-#include "eetype.inl"
+#include "MethodTable.inl"
 #include "CommonMacros.inl"
 #include "volatile.h"
 #include "GCMemoryHelpers.h"
@@ -46,7 +46,7 @@ COOP_PINVOKE_HELPER(void, RhDebugBreak, ())
 }
 
 // Busy spin for the given number of iterations.
-COOP_PINVOKE_HELPER(void, RhSpinWait, (int32_t iterations))
+EXTERN_C REDHAWK_API void __cdecl RhSpinWait(int32_t iterations)
 {
     YieldProcessorNormalizationInfo normalizationInfo;
     YieldProcessorNormalizedForPreSkylakeCount(normalizationInfo, iterations);
@@ -117,17 +117,17 @@ COOP_PINVOKE_HELPER(HANDLE, RhGetOSModuleFromPointer, (PTR_VOID pPointerVal))
     return NULL;
 }
 
-COOP_PINVOKE_HELPER(HANDLE, RhGetOSModuleFromEEType, (EEType * pEEType))
+COOP_PINVOKE_HELPER(HANDLE, RhGetOSModuleFromEEType, (MethodTable * pEEType))
 {
     return pEEType->GetTypeManagerPtr()->AsTypeManager()->GetOsModuleHandle();
 }
 
-COOP_PINVOKE_HELPER(TypeManagerHandle, RhGetModuleFromEEType, (EEType * pEEType))
+COOP_PINVOKE_HELPER(TypeManagerHandle, RhGetModuleFromEEType, (MethodTable * pEEType))
 {
     return *pEEType->GetTypeManagerPtr();
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (TypeManagerHandle *pTypeManagerHandle, uint32_t blobId, uint8_t ** ppbBlob, uint32_t * pcbBlob))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhFindBlob, (TypeManagerHandle *pTypeManagerHandle, uint32_t blobId, uint8_t ** ppbBlob, uint32_t * pcbBlob))
 {
     TypeManagerHandle typeManagerHandle = *pTypeManagerHandle;
 
@@ -144,7 +144,7 @@ COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (TypeManagerHandle *pTypeManagerHandle,
     *ppbBlob = (uint8_t*)pBlob;
     *pcbBlob = (uint32_t)length;
 
-    return pBlob != NULL;
+    FC_RETURN_BOOL(pBlob != NULL);
 }
 
 COOP_PINVOKE_HELPER(void *, RhGetTargetOfUnboxingAndInstantiatingStub, (void * pUnboxStub))

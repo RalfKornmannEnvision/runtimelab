@@ -193,10 +193,10 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         [DllImport(NativeObjectWriterFileName)]
-        private static extern int EmitSymbolRef(IntPtr objWriter, byte[] symbolName, RelocType relocType, int delta);
-        public int EmitSymbolRef(Utf8StringBuilder symbolName, RelocType relocType, int delta = 0)
+        private static extern int EmitSymbolRef(IntPtr objWriter, byte[] symbolName, RelocType relocType, int delta, SymbolRefFlags flags);
+        private int EmitSymbolRef(Utf8StringBuilder symbolName, RelocType relocType, int delta = 0, SymbolRefFlags flags = 0)
         {
-            return EmitSymbolRef(_nativeObjectWriter, symbolName.Append('\0').UnderlyingArray, relocType, delta);
+            return EmitSymbolRef(_nativeObjectWriter, symbolName.Append('\0').UnderlyingArray, relocType, delta, flags);
         }
 
         [DllImport(NativeObjectWriterFileName)]
@@ -787,7 +787,17 @@ namespace ILCompiler.DependencyAnalysis
             AppendExternCPrefix(_sb);
             target.AppendMangledName(_nodeFactory.NameMangler, _sb);
 
-            return EmitSymbolRef(_sb, relocType, checked(delta + target.Offset));
+            SymbolRefFlags flags = 0;
+
+            // For now consider all method symbols address taken.
+            // We could restrict this in the future to those that are referenced from
+            // reflection tables, EH tables, were actually address taken in code, or are referenced from vtables.
+            if ((_options & ObjectWritingOptions.ControlFlowGuard) != 0 && target is IMethodNode)
+            {
+                flags |= SymbolRefFlags.AddressTakenFunction;
+            }
+
+            return EmitSymbolRef(_sb, relocType, checked(delta + target.Offset), flags);
         }
 
         public void EmitBlobWithRelocs(byte[] blob, Relocation[] relocs)
@@ -951,7 +961,7 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
-        public static void EmitObject(string objectFilePath, IEnumerable<DependencyNode> nodes, NodeFactory factory, ObjectWritingOptions options, IObjectDumper dumper)
+        public static void EmitObject(string objectFilePath, IReadOnlyCollection<DependencyNode> nodes, NodeFactory factory, ObjectWritingOptions options, IObjectDumper dumper, Logger logger)
         {
             ObjectWriter objectWriter = new ObjectWriter(objectFilePath, factory, options);
             bool succeeded = false;
@@ -972,11 +982,27 @@ namespace ILCompiler.DependencyAnalysis
                 }
                 objectWriter.SetCodeSectionAttribute(managedCodeSection);
 
+                ProgressReporter progressReporter = default;
+                if (logger.IsVerbose)
+                {
+                    int count = 0;
+                    foreach (var node in nodes)
+                        if (node is ObjectNode)
+                            count++;
+
+                    logger.Writer.WriteLine($"Writing {count} object nodes...");
+
+                    progressReporter = new ProgressReporter(logger, count);
+                }
+
                 foreach (DependencyNode depNode in nodes)
                 {
                     ObjectNode node = depNode as ObjectNode;
                     if (node == null)
                         continue;
+
+                    if (logger.IsVerbose)
+                        progressReporter.LogProgress();
 
                     if (node.ShouldSkipEmittingObjectNode(factory))
                         continue;
@@ -1135,11 +1161,14 @@ namespace ILCompiler.DependencyAnalysis
                         objectWriter.EmitDebugFunctionInfo(node, nodeContents.Data.Length);
                     }
 
-                    if (node is ConstructedEETypeNode eeType)
+                    if (node is ConstructedEETypeNode MethodTable)
                     {
-                        objectWriter._userDefinedTypeDescriptor.GetTypeIndex(eeType.Type, needsCompleteType: true);
+                        objectWriter._userDefinedTypeDescriptor.GetTypeIndex(MethodTable.Type, needsCompleteType: true);
                     }
                 }
+
+                if (logger.IsVerbose)
+                    logger.Writer.WriteLine($"Finalizing output to '{objectFilePath}'...");
 
                 objectWriter.EmitDebugModuleInfo();
 
@@ -1250,11 +1279,45 @@ namespace ILCompiler.DependencyAnalysis
 
             return $"{arch}{sub}-{vendor}-{sys}-{abi}";
         }
+
+        private enum SymbolRefFlags
+        {
+            AddressTakenFunction = 0x0001,
+        }
+
+        private struct ProgressReporter
+        {
+            private readonly Logger _logger;
+            private readonly int _increment;
+            private int _current;
+
+            // Will report progress every (100 / 10) = 10%
+            private const int Steps = 10;
+
+            public ProgressReporter(Logger logger, int total)
+            {
+                _logger = logger;
+                _increment = total / Steps;
+                _current = 0;
+            }
+
+            public void LogProgress()
+            {
+                _current++;
+
+                int adjusted = _current + Steps - 1;
+                if ((adjusted % _increment) == 0)
+                {
+                    _logger.Writer.WriteLine($"{(adjusted / _increment) * (100 / Steps)}%...");
+                }
+            }
+        }
     }
 
     [Flags]
     public enum ObjectWritingOptions
     {
         GenerateDebugInfo = 0x01,
+        ControlFlowGuard = 0x02,
     }
 }

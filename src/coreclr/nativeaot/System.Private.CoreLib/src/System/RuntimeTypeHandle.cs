@@ -16,7 +16,7 @@ namespace System
     public unsafe struct RuntimeTypeHandle : IEquatable<RuntimeTypeHandle>, ISerializable
     {
         //
-        // Caution: There can be and are multiple EEType for the "same" type (e.g. int[]). That means
+        // Caution: There can be and are multiple MethodTable for the "same" type (e.g. int[]). That means
         // you can't use the raw IntPtr value for comparisons.
         //
 
@@ -92,7 +92,7 @@ namespace System
 
         public ModuleHandle GetModuleHandle()
         {
-            Type type = Type.GetTypeFromHandle(this);
+            Type? type = Type.GetTypeFromHandle(this);
             if (type == null)
                 return default(ModuleHandle);
 

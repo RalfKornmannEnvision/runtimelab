@@ -107,6 +107,13 @@ namespace ILCompiler
 
             metadataBlob = ms.ToArray();
 
+            const int MaxAllowedMetadataOffset = 0xFFFFFF;
+            if (metadataBlob.Length > MaxAllowedMetadataOffset)
+            {
+                // Offset portion of metadata handles is limited to 16 MB.
+                throw new InvalidOperationException($"Metadata blob exceeded the addressing range (allowed: {MaxAllowedMetadataOffset}, actual: {metadataBlob.Length})");
+            }
+
             typeMappings = new List<MetadataMapping<MetadataType>>();
             methodMappings = new List<MetadataMapping<MethodDesc>>();
             fieldMappings = new List<MetadataMapping<FieldDesc>>();
@@ -122,7 +129,7 @@ namespace ILCompiler
                 MetadataRecord record = transformed.GetTransformedTypeDefinition(definition);
 
                 // Reflection requires that we maintain type identity. Even if we only generated a TypeReference record,
-                // if there is an EEType for it, we also need a mapping table entry for it.
+                // if there is an MethodTable for it, we also need a mapping table entry for it.
                 if (record == null)
                     record = transformed.GetTransformedTypeReference(definition);
 

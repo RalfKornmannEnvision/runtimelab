@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#include "../../AnyOS/entrypoints.h"
+#include <common/entrypoints.h>
 
 // Include System.Native headers
 #include "pal_autoreleasepool.h"
@@ -93,7 +93,7 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_FTruncate)
     DllImportEntry(SystemNative_Poll)
     DllImportEntry(SystemNative_PosixFAdvise)
-    DllImportEntry(SystemNative_PosixFAllocate)
+    DllImportEntry(SystemNative_FAllocate)
     DllImportEntry(SystemNative_Read)
     DllImportEntry(SystemNative_ReadLink)
     DllImportEntry(SystemNative_Rename)
@@ -112,6 +112,7 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_LChflagsCanSetHiddenFlag)
     DllImportEntry(SystemNative_ReadProcessStatusInfo)
     DllImportEntry(SystemNative_Log)
+    DllImportEntry(SystemNative_LogError)
     DllImportEntry(SystemNative_AlignedAlloc)
     DllImportEntry(SystemNative_AlignedFree)
     DllImportEntry(SystemNative_AlignedRealloc)
@@ -220,6 +221,7 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_GetOSArchitecture)
     DllImportEntry(SystemNative_GetProcessArchitecture)
     DllImportEntry(SystemNative_SearchPath)
+    DllImportEntry(SystemNative_SearchPath_TempDirectory)
     DllImportEntry(SystemNative_RegisterForSigChld)
     DllImportEntry(SystemNative_SetDelayedSigChildConsoleConfigurationHandler)
     DllImportEntry(SystemNative_SetTerminalInvalidationHandler)
@@ -237,11 +239,9 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_LoadLibrary)
     DllImportEntry(SystemNative_GetProcAddress)
     DllImportEntry(SystemNative_FreeLibrary)
-    DllImportEntry(SystemNative_GetEnv)
     DllImportEntry(SystemNative_SchedGetCpu)
     DllImportEntry(SystemNative_Exit)
     DllImportEntry(SystemNative_Abort)
-    DllImportEntry(SystemNative_GetEnviron)
     DllImportEntry(SystemNative_UTimensat)
     DllImportEntry(SystemNative_GetTimestamp)
     DllImportEntry(SystemNative_GetCpuUtilization)
@@ -251,7 +251,6 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_GetEGid)
     DllImportEntry(SystemNative_SetEUid)
     DllImportEntry(SystemNative_GetGroupList)
-    DllImportEntry(SystemNative_GetUid)
     DllImportEntry(SystemNative_CreateAutoreleasePool)
     DllImportEntry(SystemNative_DrainAutoreleasePool)
     DllImportEntry(SystemNative_iOSSupportVersion)
@@ -268,11 +267,14 @@ static const Entry s_sysNative[] =
     DllImportEntry(SystemNative_SetPosixSignalHandler)
     DllImportEntry(SystemNative_GetPlatformSignalNumber)
     DllImportEntry(SystemNative_GetGroups)
+    DllImportEntry(SystemNative_GetEnv)
+    DllImportEntry(SystemNative_GetEnviron)
+    DllImportEntry(SystemNative_FreeEnviron)
 };
 
 EXTERN_C const void* SystemResolveDllImport(const char* name);
 
 EXTERN_C const void* SystemResolveDllImport(const char* name)
 {
-    return ResolveDllImport(s_sysNative, lengthof(s_sysNative), name);
+    return minipal_resolve_dllimport(s_sysNative, lengthof(s_sysNative), name);
 }

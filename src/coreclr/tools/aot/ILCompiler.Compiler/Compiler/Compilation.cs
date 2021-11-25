@@ -92,6 +92,11 @@ namespace ILCompiler
 
         protected abstract void CompileInternal(string outputFile, ObjectDumper dumper);
 
+        public void DetectGenericCycles(MethodDesc caller, MethodDesc callee)
+        {
+            _nodeFactory.TypeSystemContext.DetectGenericCycles(caller, callee);
+        }
+
         public bool CanInline(MethodDesc caller, MethodDesc callee)
         {
             return _inliningPolicy.CanInline(caller, callee);
@@ -109,6 +114,9 @@ namespace ILCompiler
             // vtable slots.
             if (followVirtualDispatch && (target.IsFinal || target.OwningType.IsSealed()))
                 followVirtualDispatch = false;
+
+            if (followVirtualDispatch)
+                target = MetadataVirtualMethodAlgorithm.FindSlotDefiningMethodForVirtualMethod(target);
 
             return DelegateCreationInfo.Create(delegateType, target, NodeFactory, followVirtualDispatch);
         }
@@ -259,7 +267,7 @@ namespace ILCompiler
                 MetadataType activatorType = type.Context.SystemModule.GetKnownType("System", "Activator");
                 if (type.IsValueType && type.GetParameterlessConstructor() == null)
                 {
-                    ctor = activatorType.GetKnownMethod("ValueTypeWithNoConstructorMethod", null);
+                    ctor = activatorType.GetKnownNestedType("StructWithNoConstructor").GetKnownMethod(".ctor", null);
                 }
                 else
                 {
@@ -312,6 +320,11 @@ namespace ILCompiler
 
         public GenericDictionaryLookup ComputeGenericLookup(MethodDesc contextMethod, ReadyToRunHelperId lookupKind, object targetOfLookup)
         {
+            if (targetOfLookup is TypeSystemEntity typeSystemEntity)
+            {
+                _nodeFactory.TypeSystemContext.DetectGenericCycles(contextMethod, typeSystemEntity);
+            }
+
             GenericContextSource contextSource;
 
             if (contextMethod.RequiresInstMethodDescArg())
@@ -396,29 +409,24 @@ namespace ILCompiler
             return GenericDictionaryLookup.CreateHelperLookup(contextSource, lookupKind, targetOfLookup);
         }
 
-        /// <summary>
-        /// Gets the type of System.Type descendant that implements runtime types.
-        /// </summary>
-        public virtual TypeDesc GetTypeOfRuntimeType()
-        {
-            ModuleDesc reflectionCoreModule = TypeSystemContext.GetModuleForSimpleName("System.Private.Reflection.Core", false);
-            if (reflectionCoreModule != null)
-            {
-                return reflectionCoreModule.GetKnownType("System.Reflection.Runtime.TypeInfos", "RuntimeTypeInfo");
-            }
-
-            return TypeSystemContext.SystemModule.GetKnownType("System", "Type");
-        }
-
         public bool IsFatPointerCandidate(MethodDesc containingMethod, MethodSignature signature)
         {
             // Unmanaged calls are never fat pointers
             if ((signature.Flags & MethodSignatureFlags.UnmanagedCallingConventionMask) != 0)
                 return false;
 
-            // Everything else except RawCalliHelpers could be a fat pointer
-            var owningType = containingMethod.OwningType as MetadataType;
-            return owningType?.Name != "RawCalliHelper";
+            if (containingMethod.OwningType is MetadataType owningType)
+            {
+                // RawCalliHelper is a way for the class library to opt out of fat calls
+                if (owningType.Name == "RawCalliHelper")
+                    return false;
+
+                // Delegate invocation never needs fat calls
+                if (owningType.IsDelegate && containingMethod.Name == "Invoke")
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -432,15 +440,20 @@ namespace ILCompiler
             // Needs to be either a concrete method, or a runtime determined form.
             Debug.Assert(!calledMethod.IsCanonicalMethod(CanonicalFormKind.Specific));
 
-            // If the method defines the slot, we can use that.
-            if (calledMethod.IsNewSlot)
-                return calledMethod;
-
             MethodDesc targetMethod = calledMethod.GetCanonMethodTarget(CanonicalFormKind.Specific);
+            MethodDesc targetMethodDefinition = targetMethod.GetMethodDefinition();
+
+            MethodDesc slotNormalizedMethodDefinition = MetadataVirtualMethodAlgorithm.FindSlotDefiningMethodForVirtualMethod(targetMethodDefinition);
+
+            // If the method defines the slot, we can use that.
+            if (slotNormalizedMethodDefinition == targetMethodDefinition)
+            {
+                return calledMethod;
+            }
 
             // Normalize to the slot defining method
             MethodDesc slotNormalizedMethod = TypeSystemContext.GetInstantiatedMethod(
-                MetadataVirtualMethodAlgorithm.FindSlotDefiningMethodForVirtualMethod(targetMethod.GetMethodDefinition()),
+                slotNormalizedMethodDefinition,
                 targetMethod.Instantiation);
 
             // Since the slot normalization logic modified what method we're looking at, we need to compute the new target of lookup.

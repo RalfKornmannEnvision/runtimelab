@@ -1,8 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 cmake_policy(SET CMP0091 NEW)
 
+include(../../../../eng/native/configurepaths.cmake)
+
 # C Compiler flags
-SET (CMAKE_C_FLAGS_INIT                     "/FC")
+SET (CMAKE_C_FLAGS_INIT                     "/W3 /FC")
 SET (CMAKE_C_FLAGS_DEBUG_INIT               "/Od /Zi")
 SET (CMAKE_C_FLAGS_RELEASE_INIT             "/Ox")
 SET (CMAKE_C_FLAGS_RELWITHDEBINFO_INIT      "/O2 /Zi")
@@ -33,6 +35,8 @@ endif()
 
 project(CoreFX)
 
+include(../../../../eng/native/configurepaths.cmake)
+
 # The following options are set by the razzle build
 add_compile_options(/d2Zi+)       # make optimized builds debugging easier
 add_compile_options(/nologo)      # Suppress Startup Banner
@@ -61,19 +65,16 @@ if (${CLR_CMAKE_HOST_ARCH} STREQUAL "x86")
     add_compile_options(/Gz)
 endif ()
 
-# TODO Unification debt https://github.com/dotnet/runtimelab/issues/106
-# CFG runtime checks in C++ code are unnecessary overhead unless Native AOT compiler
-# produces CFG compliant code as well and CFG is enabled in the linker
 # enable control-flow-guard support for native components
-# add_compile_options(/guard:cf)
-# list(APPEND __SharedLinkArgs /GUARD:CF)
+add_compile_options(/guard:cf)
+list(APPEND __SharedLinkArgs /guard:cf)
 
-#if (${CLR_CMAKE_HOST_ARCH} STREQUAL "x86_64" OR ${CLR_CMAKE_HOST_ARCH} STREQUAL "amd64" OR ${CLR_CMAKE_HOST_ARCH} STREQUAL "x64")
-#    # Enable EH continuation table and CETCOMPAT for native components
-#    add_compile_options(/guard:ehcont)
-#    list(APPEND __SharedLinkArgs /guard:ehcont)
-#    list(APPEND __SharedLinkArgs /CETCOMPAT)
-#endif ()
+if (${CLR_CMAKE_HOST_ARCH} STREQUAL "x86_64" OR ${CLR_CMAKE_HOST_ARCH} STREQUAL "amd64" OR ${CLR_CMAKE_HOST_ARCH} STREQUAL "x64")
+    # Enable EH continuation table and CETCOMPAT for native components
+    add_compile_options(/guard:ehcont)
+    list(APPEND __SharedLinkArgs /guard:ehcont)
+    list(APPEND __SharedLinkArgs /CETCOMPAT)
+endif ()
 
 # Statically linked CRT (libcmt[d].lib, libvcruntime[d].lib and libucrt[d].lib) by default. This is done to avoid
 # linking in VCRUNTIME140.DLL for a simplified xcopy experience by reducing the dependency on VC REDIST.
@@ -84,9 +85,7 @@ endif ()
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-# TODO Unification debt https://github.com/dotnet/runtimelab/issues/106
-# Link Time Code Generation requires exact C++ compiler and linker version match
-# add_compile_options($<$<CONFIG:RELEASE>:/GL>)
+add_compile_options($<$<CONFIG:RELEASE>:/GL>)
 
 list(APPEND __LinkLibraries $<$<CONFIG:DEBUG>:libcmtd.lib>)
 list(APPEND __LinkLibraries $<$<CONFIG:RELEASE>:libcmt.lib>)
@@ -129,6 +128,8 @@ endif ()
 # such as on bad user-provided inputs.  We leave NDEBUG defined, however,
 # as other asserts should still be included.
 add_compile_definitions($<$<CONFIG:RELEASE>:NDEBUG>)
+
+include_directories(${CLR_SRC_NATIVE_DIR})
 
 # we only need to build System.Globalization.Native when building static libs.
 if(STATIC_LIBS_ONLY)

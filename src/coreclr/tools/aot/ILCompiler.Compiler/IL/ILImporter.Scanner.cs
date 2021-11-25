@@ -204,7 +204,7 @@ namespace Internal.IL
                     {
                         TypeDesc catchType = (TypeDesc)_methodIL.GetObject(region.ClassToken);
                         if (catchType.IsRuntimeDeterminedSubtype)
-                            _dependencies.Add(_factory.MethodEntrypoint(_factory.TypeSystemContext.GetHelperEntryPoint("ThrowHelpers", "ThrowInvalidProgramException")), "Unsupported EH");
+                            ThrowHelper.ThrowInvalidProgramException();
                     }
                 }
             }
@@ -245,7 +245,17 @@ namespace Internal.IL
                 _dependencies.Add(_compilation.ComputeConstantLookup(ReadyToRunHelperId.TypeHandleForCasting, type), "IsInst/CastClass");
             }
         }
-        
+
+        private IMethodNode GetMethodEntrypoint(MethodDesc method)
+        {
+            if (method.HasInstantiation || method.OwningType.HasInstantiation)
+            {
+                _compilation.DetectGenericCycles(_canonMethod, method);
+            }
+
+            return _factory.MethodEntrypoint(method);
+        }
+
         private void ImportCall(ILOpcode opcode, int token)
         {
             // We get both the canonical and runtime determined form - JitInterface mostly operates
@@ -516,6 +526,27 @@ namespace Internal.IL
                     _dependencies.Add(_factory.FatFunctionPointer(runtimeDeterminedMethod), reason);
                 }
             }
+            else if (directCall && resolvedConstraint && exactContextNeedsRuntimeLookup)
+            {
+                // We want to do a direct call to a shared method on a valuetype. We need to provide
+                // a generic context, but the JitInterface doesn't provide a way for us to do it from here.
+                // So we do the next best thing and ask RyuJIT to look up a fat pointer.
+                //
+                // We have the canonical version of the method - find the runtime determined version.
+                // This is simplified because we know the method is on a valuetype.
+                Debug.Assert(targetMethod.OwningType.IsValueType);
+                MethodDesc targetOfLookup;
+                if (_constrained.IsRuntimeDeterminedType)
+                    targetOfLookup = _compilation.TypeSystemContext.GetMethodForRuntimeDeterminedType(targetMethod.GetTypicalMethodDefinition(), (RuntimeDeterminedType)_constrained);
+                else
+                    targetOfLookup = _compilation.TypeSystemContext.GetMethodForInstantiatedType(targetMethod.GetTypicalMethodDefinition(), (InstantiatedType)_constrained);
+                if (targetOfLookup.HasInstantiation)
+                {
+                    targetOfLookup = targetOfLookup.MakeInstantiatedMethod(runtimeDeterminedMethod.Instantiation);
+                }
+                Debug.Assert(targetOfLookup.GetCanonMethodTarget(CanonicalFormKind.Specific) == targetMethod.GetCanonMethodTarget(CanonicalFormKind.Specific));
+                _dependencies.Add(GetGenericLookupHelper(ReadyToRunHelperId.MethodEntry, targetOfLookup), reason);
+            }
             else if (directCall)
             {
                 bool referencingArrayAddressMethod = false;
@@ -599,7 +630,7 @@ namespace Internal.IL
                     else
                     {
                         Debug.Assert(!forceUseRuntimeLookup);
-                        _dependencies.Add(_factory.MethodEntrypoint(targetMethod), reason);
+                        _dependencies.Add(GetMethodEntrypoint(targetMethod), reason);
 
                         if (targetMethod.RequiresInstMethodTableArg() && resolvedConstraint)
                         {
@@ -661,7 +692,7 @@ namespace Internal.IL
                         _dependencies.Add(_compilation.NodeFactory.MaximallyConstructableType(concreteMethod.OwningType), reason + " - inlining protection");
                     }
 
-                    _dependencies.Add(_compilation.NodeFactory.MethodEntrypoint(targetMethod), reason);
+                    _dependencies.Add(GetMethodEntrypoint(targetMethod), reason);
                 }
             }
             else if (method.HasInstantiation)
@@ -669,6 +700,10 @@ namespace Internal.IL
                 // Generic virtual method call
 
                 MethodDesc methodToLookup = _compilation.GetTargetOfGenericVirtualMethodCall(runtimeDeterminedMethod);
+
+                _compilation.DetectGenericCycles(
+                        _canonMethod,
+                        methodToLookup.GetCanonMethodTarget(CanonicalFormKind.Specific));
 
                 if (exactContextNeedsRuntimeLookup)
                 {
@@ -925,7 +960,10 @@ namespace Internal.IL
 
                 if (field.HasRva)
                 {
-                    // We could add a dependency to the data node, but we don't really need it.
+                    // We don't care about field RVA data for the usual cases, but if this is one of the
+                    // magic fields the compiler synthetized, the data blob might bring more dependencies
+                    // and we need to scan those.
+                    _dependencies.Add(_compilation.GetFieldRvaData(field), reason);
                     // TODO: lazy cctor dependency
                     return;
                 }
@@ -1069,19 +1107,47 @@ namespace Internal.IL
             {
                 case ILOpcode.add_ovf:
                 case ILOpcode.add_ovf_un:
-                case ILOpcode.mul_ovf:
-                case ILOpcode.mul_ovf_un:
                 case ILOpcode.sub_ovf:
                 case ILOpcode.sub_ovf_un:
                     _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.Overflow), "_ovf");
                     break;
+                case ILOpcode.mul_ovf:
+                case ILOpcode.mul_ovf_un:
+                    if (_compilation.TypeSystemContext.Target.Architecture == TargetArchitecture.ARM)
+                    {
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.LMulOfv), "_lmulovf");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ULMulOvf), "_ulmulovf");
+                    }
 
+                    _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.Overflow), "_ovf");
+                    break;
                 case ILOpcode.div:
                 case ILOpcode.div_un:
+                    if (_compilation.TypeSystemContext.Target.Architecture == TargetArchitecture.ARM)
+                    {
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ULDiv), "_uldiv");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.LDiv), "_ldiv");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.UDiv), "_udiv");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.Div), "_div");
+                    }
+                    else if (_compilation.TypeSystemContext.Target.Architecture == TargetArchitecture.ARM64)
+                    {
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ThrowDivZero), "_divbyzero");
+                    }
+                    break;                    
                 case ILOpcode.rem:
                 case ILOpcode.rem_un:
-                    // Required for ARM64
-                    _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ThrowDivZero), "_divbyzero");
+                    if (_compilation.TypeSystemContext.Target.Architecture == TargetArchitecture.ARM)
+                    {
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ULMod), "_ulmod");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.LMod), "_lmod");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.UMod), "_umod");
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.Mod), "_mod");
+                    }
+                    else if (_compilation.TypeSystemContext.Target.Architecture == TargetArchitecture.ARM64)
+                    {
+                        _dependencies.Add(GetHelperEntrypoint(ReadyToRunHelper.ThrowDivZero), "_divbyzero");
+                    }
                     break;
             }
         }
@@ -1191,12 +1257,13 @@ namespace Internal.IL
 
         private bool IsEETypePtrOf(MethodDesc method)
         {
-            if (method.IsIntrinsic && method.Name == "EETypePtrOf" && method.Instantiation.Length == 1)
+            if (method.IsIntrinsic && (method.Name == "EETypePtrOf" || method.Name == "MethodTableOf") && method.Instantiation.Length == 1)
             {
                 MetadataType owningType = method.OwningType as MetadataType;
                 if (owningType != null)
                 {
-                    return owningType.Name == "EETypePtr" && owningType.Namespace == "System";
+                    return (owningType.Name == "EETypePtr" && owningType.Namespace == "System")
+                        || (owningType.Name == "Object" && owningType.Namespace == "System");
                 }
             }
 

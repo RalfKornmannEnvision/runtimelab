@@ -20,14 +20,14 @@ namespace System
         public bool IsInterface => (GetAttributeFlagsImpl() & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface;
 
         [Intrinsic]
-        public static Type GetTypeFromHandle(RuntimeTypeHandle handle) => handle.IsNull ? null : GetTypeFromEETypePtr(handle.ToEETypePtr());
+        public static Type? GetTypeFromHandle(RuntimeTypeHandle handle) => handle.IsNull ? null : GetTypeFromEETypePtr(handle.ToEETypePtr());
 
         internal static Type GetTypeFromEETypePtr(EETypePtr eeType)
         {
-            // If we support the writable data section on EETypes, the runtime type associated with the EEType
+            // If we support the writable data section on EETypes, the runtime type associated with the MethodTable
             // is cached there. If writable data is not supported, we need to do a lookup in the runtime type
             // unifier's hash table.
-            if (Internal.Runtime.EEType.SupportsWritableData)
+            if (Internal.Runtime.MethodTable.SupportsWritableData)
             {
                 ref GCHandle handle = ref eeType.GetWritableData<GCHandle>();
                 if (handle.IsAllocated)
@@ -49,7 +49,7 @@ namespace System
         private static Type GetTypeFromEETypePtrSlow(EETypePtr eeType, ref GCHandle handle)
         {
             // Note: this is bypassing the "fast" unifier cache (based on a simple IntPtr
-            // identity of EEType pointers). There is another unifier behind that cache
+            // identity of MethodTable pointers). There is another unifier behind that cache
             // that ensures this code is race-free.
             Type result = RuntimeTypeUnifier.GetRuntimeTypeBypassCache(eeType);
             GCHandle tempHandle = GCHandle.Alloc(result);
@@ -82,28 +82,5 @@ namespace System
         [Intrinsic]
         [RequiresUnreferencedCode("The type might be removed")]
         public static Type GetType(string typeName, Func<AssemblyName, Assembly?>? assemblyResolver, Func<Assembly?, string, bool, Type?>? typeResolver, bool throwOnError, bool ignoreCase) => RuntimeAugments.Callbacks.GetType(typeName, assemblyResolver, typeResolver, throwOnError: throwOnError, ignoreCase: ignoreCase, defaultAssembly: null);
-
-        [Intrinsic]
-        public static bool operator ==(Type? left, Type? right)
-        {
-            if (object.ReferenceEquals(left, right))
-                return true;
-
-            if (left is null || right is null)
-                return false;
-
-            // CLR-compat: runtime types are never equal to non-runtime types
-            // If `left` is a non-runtime type with a weird Equals implementation
-            // this is where operator `==` would differ from `Equals` call.
-            if (left.IsRuntimeImplemented() || right.IsRuntimeImplemented())
-                return false;
-
-            return left.Equals(right);
-        }
-
-        [Intrinsic]
-        public static bool operator !=(Type? left, Type? right) => !(left == right);
-
-        public bool IsRuntimeImplemented() => this is IRuntimeImplemented; // Not an api but needs to be public because of Reflection.Core/CoreLib divide.
     }
 }

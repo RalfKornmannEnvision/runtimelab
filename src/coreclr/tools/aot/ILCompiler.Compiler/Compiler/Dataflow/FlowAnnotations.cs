@@ -140,6 +140,64 @@ namespace ILCompiler.Dataflow
             return DynamicallyAccessedMemberTypes.None;
         }
 
+        public bool ShouldWarnWhenAccessedForReflection(MethodDesc method)
+        {
+            method = method.GetTypicalMethodDefinition();
+            
+            if (!GetAnnotations(method.OwningType).TryGetAnnotation(method, out var annotation))
+                return false;
+
+            if (annotation.ParameterAnnotations == null && annotation.ReturnParameterAnnotation == DynamicallyAccessedMemberTypes.None)
+                return false;
+
+            // If the method only has annotation on the return value and it's not virtual avoid warning.
+            // Return value annotations are "consumed" by the caller of a method, and as such there is nothing
+            // wrong calling these dynamically. The only problem can happen if something overrides a virtual
+            // method with annotated return value at runtime - in this case the trimmer can't validate
+            // that the method will return only types which fulfill the annotation's requirements.
+            // For example:
+            //   class BaseWithAnnotation
+            //   {
+            //       [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields)]
+            //       public abstract Type GetTypeWithFields();
+            //   }
+            //
+            //   class UsingTheBase
+            //   {
+            //       public void PrintFields(Base base)
+            //       {
+            //            // No warning here - GetTypeWithFields is correctly annotated to allow GetFields on the return value.
+            //            Console.WriteLine(string.Join(" ", base.GetTypeWithFields().GetFields().Select(f => f.Name)));
+            //       }
+            //   }
+            //
+            // If at runtime (through ref emit) something generates code like this:
+            //   class DerivedAtRuntimeFromBase
+            //   {
+            //       // No point in adding annotation on the return value - nothing will look at it anyway
+            //       // Linker will not see this code, so there are no checks
+            //       public override Type GetTypeWithFields() { return typeof(TestType); }
+            //   }
+            //
+            // If TestType from above is trimmed, it may note have all its fields, and there would be no warnings generated.
+            // But there has to be code like this somewhere in the app, in order to generate the override:
+            //   class RuntimeTypeGenerator
+            //   {
+            //       public MethodInfo GetBaseMethod()
+            //       {
+            //            // This must warn - that the GetTypeWithFields has annotation on the return value
+            //            return typeof(BaseWithAnnotation).GetMethod("GetTypeWithFields");
+            //       }
+            //   }
+            return method.IsVirtual || annotation.ParameterAnnotations != null;
+        }
+
+        public bool ShouldWarnWhenAccessedForReflection(FieldDesc field)
+        {
+            field = field.GetTypicalFieldDefinition();
+            return GetAnnotations(field.OwningType).TryGetAnnotation(field, out _);
+        }
+
         private TypeAnnotations GetAnnotations(TypeDesc type)
         {
             return _hashtable.GetOrCreateValue(type);
@@ -230,7 +288,7 @@ namespace ILCompiler.Dataflow
                     {
                         // Already know that there's a non-empty annotation on a field which is not System.Type/String and we're about to ignore it
                         _logger.LogWarning(
-                            $"Field '{field.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to fields of type 'System.Type' or 'System.String'",
+                            $"Field '{field.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to fields of type 'System.Type' or 'System.String'.",
                             2097, field, subcategory: MessageSubCategory.TrimAnalysis);
                         continue;
                     }
@@ -305,8 +363,8 @@ namespace ILCompiler.Dataflow
                             if (returnAnnotation != DynamicallyAccessedMemberTypes.None && !IsTypeInterestingForDataflow(signature.ReturnType))
                             {
                                 _logger.LogWarning(
-                                    $"Return parameter of method '{method.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to parameters of type 'System.Type' or 'System.String'",
-                                    2098, method, subcategory: MessageSubCategory.TrimAnalysis);
+                                    $"Return type of method '{method.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to parameters of type 'System.Type' or 'System.String'.",
+                                    2106, method, subcategory: MessageSubCategory.TrimAnalysis);
                             }
                         }
                         else
@@ -318,7 +376,7 @@ namespace ILCompiler.Dataflow
                             if (!IsTypeInterestingForDataflow(signature[parameter.SequenceNumber - 1]))
                             {
                                 _logger.LogWarning(
-                                    $"Parameter #{parameter.SequenceNumber} of method '{method.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to parameters of type 'System.Type' or 'System.String'",
+                                    $"Parameter #{parameter.SequenceNumber} of method '{method.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to parameters of type 'System.Type' or 'System.String'.",
                                     2098, method, subcategory: MessageSubCategory.TrimAnalysis);
                                 continue;
                             }
@@ -376,7 +434,7 @@ namespace ILCompiler.Dataflow
                     if (!IsTypeInterestingForDataflow(property.Signature.ReturnType))
                     {
                         _logger.LogWarning(
-                            $"Property '{property.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to properties of type 'System.Type' or 'System.String'",
+                            $"Property '{property.GetDisplayName()}' has 'DynamicallyAccessedMembersAttribute', but that attribute can only be applied to properties of type 'System.Type' or 'System.String'.",
                             2099, property, subcategory: MessageSubCategory.TrimAnalysis);
                         continue;
                     }
@@ -595,9 +653,9 @@ namespace ILCompiler.Dataflow
             if (methodAnnotations.ParameterAnnotations != null || baseMethodAnnotations.ParameterAnnotations != null)
             {
                 if (methodAnnotations.ParameterAnnotations == null)
-                    ValidateMethodParametersHaveNoAnnotations(ref baseMethodAnnotations, method, baseMethod, method);
+                    ValidateMethodParametersHaveNoAnnotations(baseMethodAnnotations.ParameterAnnotations, method, baseMethod, method);
                 else if (baseMethodAnnotations.ParameterAnnotations == null)
-                    ValidateMethodParametersHaveNoAnnotations(ref methodAnnotations, method, baseMethod, method);
+                    ValidateMethodParametersHaveNoAnnotations(methodAnnotations.ParameterAnnotations, method, baseMethod, method);
                 else
                 {
                     if (methodAnnotations.ParameterAnnotations.Length != baseMethodAnnotations.ParameterAnnotations.Length)
@@ -617,9 +675,9 @@ namespace ILCompiler.Dataflow
             if (methodAnnotations.GenericParameterAnnotations != null || baseMethodAnnotations.GenericParameterAnnotations != null)
             {
                 if (methodAnnotations.GenericParameterAnnotations == null)
-                    ValidateMethodGenericParametersHaveNoAnnotations(ref baseMethodAnnotations, method, baseMethod, method);
+                    ValidateMethodGenericParametersHaveNoAnnotations(baseMethodAnnotations.GenericParameterAnnotations, method, baseMethod, method);
                 else if (baseMethodAnnotations.GenericParameterAnnotations == null)
-                    ValidateMethodGenericParametersHaveNoAnnotations(ref methodAnnotations, method, baseMethod, method);
+                    ValidateMethodGenericParametersHaveNoAnnotations(methodAnnotations.GenericParameterAnnotations, method, baseMethod, method);
                 else
                 {
                     if (methodAnnotations.GenericParameterAnnotations.Length != baseMethodAnnotations.GenericParameterAnnotations.Length)
@@ -639,11 +697,11 @@ namespace ILCompiler.Dataflow
             }
         }
 
-        void ValidateMethodParametersHaveNoAnnotations(ref MethodAnnotations methodAnnotations, MethodDesc method, MethodDesc baseMethod, MethodDesc origin)
+        void ValidateMethodParametersHaveNoAnnotations(DynamicallyAccessedMemberTypes[] parameterAnnotations, MethodDesc method, MethodDesc baseMethod, MethodDesc origin)
         {
-            for (int parameterIndex = 0; parameterIndex < methodAnnotations.ParameterAnnotations.Length; parameterIndex++)
+            for (int parameterIndex = 0; parameterIndex < parameterAnnotations.Length; parameterIndex++)
             {
-                var annotation = methodAnnotations.ParameterAnnotations[parameterIndex];
+                var annotation = parameterAnnotations[parameterIndex];
                 if (annotation != DynamicallyAccessedMemberTypes.None)
                     LogValidationWarning(
                         parameterIndex,
@@ -652,11 +710,11 @@ namespace ILCompiler.Dataflow
             }
         }
 
-        void ValidateMethodGenericParametersHaveNoAnnotations(ref MethodAnnotations methodAnnotations, MethodDesc method, MethodDesc baseMethod, MethodDesc origin)
+        void ValidateMethodGenericParametersHaveNoAnnotations(DynamicallyAccessedMemberTypes[] genericParameterAnnotations, MethodDesc method, MethodDesc baseMethod, MethodDesc origin)
         {
-            for (int genericParameterIndex = 0; genericParameterIndex < methodAnnotations.GenericParameterAnnotations.Length; genericParameterIndex++)
+            for (int genericParameterIndex = 0; genericParameterIndex < genericParameterAnnotations.Length; genericParameterIndex++)
             {
-                if (methodAnnotations.GenericParameterAnnotations[genericParameterIndex] != DynamicallyAccessedMemberTypes.None)
+                if (genericParameterAnnotations[genericParameterIndex] != DynamicallyAccessedMemberTypes.None)
                 {
                     LogValidationWarning(
                         method.Instantiation[genericParameterIndex],
@@ -700,7 +758,7 @@ namespace ILCompiler.Dataflow
                         2094, origin, subcategory: MessageSubCategory.TrimAnalysis);
                     break;
                 default:
-                    throw new NotImplementedException($"Unsupported provider type{provider.GetType()}");
+                    throw new NotImplementedException($"Unsupported provider type {provider.GetType()}");
             }
         }
 

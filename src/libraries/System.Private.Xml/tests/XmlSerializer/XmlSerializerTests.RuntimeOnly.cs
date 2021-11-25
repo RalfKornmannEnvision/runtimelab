@@ -503,6 +503,21 @@ public static partial class XmlSerializerTests
     }
 
     [Fact]
+    public static void Xml_WithXElementWithEmptyNestedElement()
+    {
+        var original = new WithXmlElement(true);
+        original.xml.InnerXml = "<empty></empty>";
+
+        MemoryStream ms = new MemoryStream();
+        new XmlSerializer(typeof(WithXmlElement)).Serialize(ms, original);
+
+        ms.Position = 0;
+        StreamReader sr = new StreamReader(ms);
+        string output = sr.ReadToEnd();
+        Assert.Contains("<empty></empty>", output);   // Self-closed, or completely empty is OK. No added space.
+    }
+
+    [Fact]
     public static void Xml_WithArrayOfXElement()
     {
         var original = new WithArrayOfXElement(true);
@@ -2829,6 +2844,7 @@ public static partial class XmlSerializerTests
     }
 
     [Fact]
+    [ActiveIssue("https://github.com/dotnet/runtime/issues/60462", TestPlatforms.iOS | TestPlatforms.tvOS)]
     public static void DerivedTypeWithDifferentOverrides()
     {
         DerivedTypeWithDifferentOverrides value = new DerivedTypeWithDifferentOverrides() { Name1 = "Name1", Name2 = "Name2", Name3 = "Name3", Name4 = "Name4", Name5 = "Name5" };
@@ -2841,6 +2857,7 @@ public static partial class XmlSerializerTests
     }
 
     [Fact]
+    [ActiveIssue("https://github.com/dotnet/runtime/issues/60462", TestPlatforms.iOS | TestPlatforms.tvOS)]
     public static void DerivedTypeWithDifferentOverrides2()
     {
         DerivedTypeWithDifferentOverrides2 value = new DerivedTypeWithDifferentOverrides2() { Name1 = "Name1", Name2 = "Name2", Name3 = "Name3", Name4 = "Name4", Name5 = "Name5", Name6 = "Name6", Name7 = "Name7" };

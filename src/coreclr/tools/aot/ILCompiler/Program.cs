@@ -59,6 +59,7 @@ namespace ILCompiler
         private bool _methodBodyFolding;
         private bool _singleThreaded;
         private string _instructionSet;
+        private string _guard;
 
         private string _singleMethodTypeName;
         private string _singleMethodName;
@@ -84,12 +85,16 @@ namespace ILCompiler
 
         private IReadOnlyList<string> _rootedAssemblies = Array.Empty<string>();
         private IReadOnlyList<string> _conditionallyRootedAssemblies = Array.Empty<string>();
+        private IReadOnlyList<string> _trimmedAssemblies = Array.Empty<string>();
+        private bool _rootDefaultAssemblies;
 
         public IReadOnlyList<string> _mibcFilePaths = Array.Empty<string>();
 
         private IReadOnlyList<string> _singleWarnEnabledAssemblies = Array.Empty<string>();
         private IReadOnlyList<string> _singleWarnDisabledAssemblies = Array.Empty<string>();
         private bool _singleWarn;
+
+        private string _makeReproPath;
 
         private bool _help;
 
@@ -202,6 +207,7 @@ namespace ILCompiler
                 syntax.DefineOptionList("runtimeopt", ref _runtimeOptions, "Runtime options to set");
                 syntax.DefineOption("singlethreaded", ref _singleThreaded, "Run compilation on a single thread");
                 syntax.DefineOption("instructionset", ref _instructionSet, "Instruction set to allow or disallow");
+                syntax.DefineOption("guard", ref _guard, "Enable mitigations. Options: 'cf': CFG (Control Flow Guard, Windows only)");
                 syntax.DefineOption("preinitstatics", ref _preinitStatics, "Interpret static constructors at compile time if possible (implied by -O)");
                 syntax.DefineOption("nopreinitstatics", ref _noPreinitStatics, "Do not interpret static constructors at compile time");
                 syntax.DefineOptionList("nowarn", ref _suppressedWarnings, "Disable specific warning messages");
@@ -213,6 +219,8 @@ namespace ILCompiler
 
                 syntax.DefineOptionList("root", ref _rootedAssemblies, "Fully generate given assembly");
                 syntax.DefineOptionList("conditionalroot", ref _conditionallyRootedAssemblies, "Fully generate given assembly if it's used");
+                syntax.DefineOptionList("trim", ref _trimmedAssemblies, "Trim the specified assembly");
+                syntax.DefineOption("defaultrooting", ref _rootDefaultAssemblies, "Root assemblies that are not marked [IsTrimmable]");
 
                 syntax.DefineOption("targetarch", ref _targetArchitectureStr, "Target architecture for cross compilation");
                 syntax.DefineOption("targetos", ref _targetOSStr, "Target OS for cross compilation");
@@ -220,6 +228,8 @@ namespace ILCompiler
                 syntax.DefineOption("singlemethodtypename", ref _singleMethodTypeName, "Single method compilation: assembly-qualified name of the owning type");
                 syntax.DefineOption("singlemethodname", ref _singleMethodName, "Single method compilation: name of the method");
                 syntax.DefineOptionList("singlemethodgenericarg", ref _singleMethodGenericArgs, "Single method compilation: generic arguments to the method");
+
+                syntax.DefineOption("make-repro-path", ref _makeReproPath, "Path where to place a repro package");
 
                 syntax.DefineParameterList("in", ref inputFiles, "Input file(s) to compile");
             });
@@ -246,6 +256,16 @@ namespace ILCompiler
 
             foreach (var reference in referenceFiles)
                 Helpers.AppendExpandedPaths(_referenceFilePaths, reference, false);
+
+            if (_makeReproPath != null)
+            {
+                // Create a repro package in the specified path
+                // This package will have the set of input files needed for compilation
+                // + the original command line arguments
+                // + a rsp file that should work to directly run out of the zip file
+
+                Helpers.MakeReproPackage(_makeReproPath, _outputFilePath, args, argSyntax, new[] { "-r", "-m", "--rdxml", "--directpinvokelist" });
+            }
 
             return argSyntax;
         }
@@ -476,6 +496,21 @@ namespace ILCompiler
             if (typeSystemContext.InputFilePaths.Count == 0)
                 throw new CommandLineException("No input files specified");
 
+            SecurityMitigationOptions securityMitigationOptions = 0;
+            if (StringComparer.OrdinalIgnoreCase.Equals(_guard, "cf"))
+            {
+                if (_targetOS != TargetOS.Windows)
+                {
+                    throw new CommandLineException($"Control flow guard only available on Windows");
+                }
+
+                securityMitigationOptions = SecurityMitigationOptions.ControlFlowGuardAnnotations;
+            }
+            else if (!String.IsNullOrEmpty(_guard))
+            {
+                throw new CommandLineException($"Unrecognized mitigation option '{_guard}'");
+            }
+
             //
             // Initialize compilation group and compilation roots
             //
@@ -565,6 +600,7 @@ namespace ILCompiler
 
             _rootedAssemblies = new List<string>(_rootedAssemblies.Select(a => ILLinkify(a)));
             _conditionallyRootedAssemblies = new List<string>(_conditionallyRootedAssemblies.Select(a => ILLinkify(a)));
+            _trimmedAssemblies = new List<string>(_trimmedAssemblies.Select(a => ILLinkify(a)));
 
             static string ILLinkify(string rootedAssembly)
             {
@@ -638,6 +674,8 @@ namespace ILCompiler
                     metadataGenerationOptions |= UsageBasedMetadataGenerationOptions.ReflectionILScanning;
                 if (_reflectedOnly)
                     metadataGenerationOptions |= UsageBasedMetadataGenerationOptions.ReflectedMembersOnly;
+                if (_rootDefaultAssemblies)
+                    metadataGenerationOptions |= UsageBasedMetadataGenerationOptions.RootDefaultAssemblies;
             }
             else
             {
@@ -661,7 +699,8 @@ namespace ILCompiler
                     metadataGenerationOptions,
                     logger,
                     featureSwitches,
-                    _conditionallyRootedAssemblies.Concat(_rootedAssemblies));
+                    _conditionallyRootedAssemblies.Concat(_rootedAssemblies),
+                    _trimmedAssemblies);
 
             InteropStateManager interopStateManager = new InteropStateManager(typeSystemContext.GeneratedAssembly);
             InteropStubManager interopStubManager = new UsageBasedInteropStubManager(interopStateManager, pinvokePolicy);
@@ -727,6 +766,7 @@ namespace ILCompiler
                 .UseDependencyTracking(trackingLevel)
                 .UseCompilationRoots(compilationRoots)
                 .UseOptimizationMode(_optimizationMode)
+                .UseSecurityMitigationOptions(securityMitigationOptions)
                 .UseDebugInfoProvider(debugInfoProvider);
 
             if (scanResults != null)
@@ -748,6 +788,12 @@ namespace ILCompiler
                 // This prevents e.g. devirtualizing and inlining methods on types that were
                 // never actually allocated.
                 builder.UseInliningPolicy(scanResults.GetInliningPolicy());
+
+                // Use an error provider that prevents us from re-importing methods that failed
+                // to import with an exception during scanning phase. We would see the same failure during
+                // compilation, but before RyuJIT gets there, it might ask questions that we don't
+                // have answers for because we didn't scan the entire method.
+                builder.UseMethodImportationErrorProvider(scanResults.GetMethodImportationErrorProvider());
             }
 
             ICompilation compilation = builder.ToCompilation();
@@ -766,6 +812,8 @@ namespace ILCompiler
 
                 defFileWriter.EmitExportedMethods();
             }
+
+            typeSystemContext.LogWarnings(logger);
 
             if (_dgmlLogFileName != null)
                 compilationResults.WriteDependencyLog(_dgmlLogFileName);

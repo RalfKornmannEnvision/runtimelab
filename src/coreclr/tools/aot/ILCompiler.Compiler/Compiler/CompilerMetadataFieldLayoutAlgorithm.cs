@@ -12,7 +12,7 @@ namespace ILCompiler
 {
     internal class CompilerMetadataFieldLayoutAlgorithm : MetadataFieldLayoutAlgorithm
     {
-        // GC statics start with a pointer to the "EEType" that signals the size and GCDesc to the GC
+        // GC statics start with a pointer to the "MethodTable" that signals the size and GCDesc to the GC
         public static LayoutInt GetGCStaticFieldOffset(TypeSystemContext context) => context.Target.LayoutPointerSize;
 
         protected override void PrepareRuntimeSpecificStaticFieldLayout(TypeSystemContext context, ref ComputedStaticFieldLayout layout)
@@ -40,6 +40,24 @@ namespace ILCompiler
             // CoreRT makes no distinction between Gc / non-Gc thread statics. All are placed into ThreadGcStatics since thread statics
             // are typically rare.
             Debug.Assert(layout.ThreadNonGcStatics.Size == LayoutInt.Zero);
+        }
+
+        protected override ComputedInstanceFieldLayout ComputeInstanceFieldLayout(MetadataType type, int numInstanceFields)
+        {
+            if (type.IsExplicitLayout)
+            {
+                return ComputeExplicitFieldLayout(type, numInstanceFields);
+            }
+            // Sequential layout has to be respected for blittable types only. We use approximation and respect it for
+            // all types without GC references (ie C# unmanaged types).
+            else if (type.IsSequentialLayout && !type.ContainsGCPointers)
+            {
+                return ComputeSequentialFieldLayout(type, numInstanceFields);
+            }
+            else
+            {
+                return ComputeAutoFieldLayout(type, numInstanceFields);
+            }
         }
     }
 }

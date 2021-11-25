@@ -40,13 +40,10 @@ namespace ILCompiler.Logging
 
         public static IEnumerable<TypeSystemEntity> GetMembersForDocumentationSignature(string id, ModuleDesc module)
         {
-            if (id == null)
-                throw new ArgumentNullException(nameof(id));
-
-            if (module == null)
-                throw new ArgumentNullException(nameof(module));
-
             var results = new List<TypeSystemEntity>();
+            if (id == null || module == null)
+                return results;
+
             ParseDocumentationSignature(id, module, results);
             return results;
         }
@@ -549,7 +546,7 @@ namespace ILCompiler.Logging
                     namepart = name;
                 }
 
-                var type = module.GetType(namespacepart, namepart, NotFoundBehavior.ReturnNull);
+                var type = module.GetType(namespacepart, namepart, throwIfNotFound: false);
                 if (type != null)
                 {
                     results.Add(type);

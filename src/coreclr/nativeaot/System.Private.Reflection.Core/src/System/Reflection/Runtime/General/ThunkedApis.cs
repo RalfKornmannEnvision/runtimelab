@@ -18,7 +18,7 @@ using Internal.LowLevelLinq;
 
 namespace System.Reflection.Runtime.Assemblies
 {
-    internal partial class RuntimeAssembly
+    internal partial class RuntimeAssemblyInfo
     {
         [RequiresUnreferencedCode("Types might be removed")]
         public sealed override Type[] GetExportedTypes() => ExportedTypes.ToArray();
@@ -64,9 +64,6 @@ namespace System.Reflection.Runtime.Assemblies
         {
             get
             {
-                if (AppContext.TryGetSwitch("Switch.System.Reflection.Assembly.SimulatedLocationInBaseDirectory", out bool isSimulated) && isSimulated)
-                    return Path.Combine(AppContext.BaseDirectory, ManifestModule.Name);
-
                 return string.Empty;
             }
         }
@@ -76,17 +73,7 @@ namespace System.Reflection.Runtime.Assemblies
         {
             get
             {
-                var assemblyPath = Location;
-                if (string.IsNullOrEmpty(assemblyPath))
-                {
-                    assemblyPath = Path.Combine(AppContext.BaseDirectory, typeof(object).Assembly.ManifestModule.Name);
-                }
-                assemblyPath = assemblyPath.Replace('\\', '/');
-                if (assemblyPath.StartsWith('/'))
-                {
-                    return "file://" + assemblyPath;
-                }
-                return "file:///" + assemblyPath;
+                throw new NotSupportedException(SR.NotSupported_CodeBase);
             }
         }
 
@@ -179,13 +166,6 @@ namespace System.Reflection.Runtime.TypeInfos
 
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.Interfaces)]
         public sealed override Type[] GetInterfaces() => ImplementedInterfaces.ToArray();
-
-        public sealed override string GetEnumName(object value) => Enum.GetName(this, value);
-        public sealed override string[] GetEnumNames() => Enum.GetNames(this);
-        public sealed override Type GetEnumUnderlyingType() => Enum.GetUnderlyingType(this);
-        [RequiresDynamicCode("It might not be possible to create an array of the enum type at runtime. Use Enum.GetValues<TEnum> instead.")]
-        public sealed override Array GetEnumValues() => Enum.GetValues(this);
-        public sealed override bool IsEnumDefined(object value) => Enum.IsDefined(this, value);
 
         // Partial trust doesn't exist in Aot so these legacy apis are meaningless. Will report everything as SecurityCritical by fiat.
         public sealed override bool IsSecurityCritical => true;

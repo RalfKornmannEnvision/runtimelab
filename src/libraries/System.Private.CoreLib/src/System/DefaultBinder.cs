@@ -4,6 +4,7 @@
 using System.Reflection;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 using CultureInfo = System.Globalization.CultureInfo;
 
 namespace System
@@ -230,7 +231,7 @@ namespace System
 
                         if (!pCls.IsAssignableFrom(argTypes[paramOrder[i][j]]))
                         {
-                            if (argTypes[paramOrder[i][j]].IsCOMObject)
+                            if (Marshal.IsBuiltInComSupported && argTypes[paramOrder[i][j]].IsCOMObject)
                             {
                                 if (pCls.IsInstanceOfType(args[paramOrder[i][j]]))
                                     continue;
@@ -258,7 +259,7 @@ namespace System
 
                             if (!paramArrayType.IsAssignableFrom(argTypes[j]))
                             {
-                                if (argTypes[j].IsCOMObject)
+                                if (Marshal.IsBuiltInComSupported && argTypes[j].IsCOMObject)
                                 {
                                     if (paramArrayType.IsInstanceOfType(args[j]))
                                         continue;
@@ -530,7 +531,7 @@ namespace System
             for (i = 0; i < types.Length; i++)
             {
                 realTypes[i] = types[i].UnderlyingSystemType;
-                if (!(realTypes[i].IsRuntimeImplemented() || realTypes[i] is SignatureType))
+                if (!(realTypes[i] is RuntimeType || realTypes[i] is SignatureType))
                     throw new ArgumentException(SR.Arg_MustBeType, nameof(types));
             }
             types = realTypes;
@@ -569,8 +570,8 @@ namespace System
 
                     if (pCls.IsPrimitive)
                     {
-                        if (!type.UnderlyingSystemType.IsRuntimeImplemented() ||
-                            !CanChangePrimitive(type.UnderlyingSystemType, pCls.UnderlyingSystemType))
+                        if (type.UnderlyingSystemType is not RuntimeType rtType ||
+                            !CanChangePrimitive(rtType, pCls.UnderlyingSystemType))
                             break;
                     }
                     else
@@ -656,8 +657,8 @@ namespace System
 
                         if (pCls.IsPrimitive)
                         {
-                            if (!indexes[j].UnderlyingSystemType.IsRuntimeImplemented() ||
-                                !CanChangePrimitive(indexes[j].UnderlyingSystemType, pCls.UnderlyingSystemType))
+                            if (indexes[j].UnderlyingSystemType is not RuntimeType rtType ||
+                                !CanChangePrimitive(rtType, pCls.UnderlyingSystemType))
                                 break;
                         }
                         else
@@ -674,8 +675,8 @@ namespace System
                     {
                         if (candidates[i].PropertyType.IsPrimitive)
                         {
-                            if (!returnType.UnderlyingSystemType.IsRuntimeImplemented() ||
-                                !CanChangePrimitive(returnType.UnderlyingSystemType, candidates[i].PropertyType.UnderlyingSystemType))
+                            if (returnType.UnderlyingSystemType is not RuntimeType rtType ||
+                                !CanChangePrimitive(rtType, candidates[i].PropertyType.UnderlyingSystemType))
                                 continue;
                         }
                         else

@@ -1338,7 +1338,7 @@ void ExtendedDefaultPolicy::NoteInt(InlineObservation obs, int value)
             unsigned maxCodeSize = static_cast<unsigned>(JitConfig.JitExtDefaultPolicyMaxIL());
 
             // TODO: Enable for PgoSource::Static as well if it's not the generic profile we bundle.
-            if (m_HasProfile && (m_RootCompiler->fgPgoSource == ICorJitInfo::PgoSource::Dynamic))
+            if (m_HasProfile && (m_RootCompiler->fgHaveTrustedProfileData()))
             {
                 maxCodeSize = static_cast<unsigned>(JitConfig.JitExtDefaultPolicyMaxILProf());
             }
@@ -1684,9 +1684,8 @@ double ExtendedDefaultPolicy::DetermineMultiplier()
         const double profileTrustCoef = (double)JitConfig.JitExtDefaultPolicyProfTrust() / 10.0;
         const double profileScale     = (double)JitConfig.JitExtDefaultPolicyProfScale() / 10.0;
 
-        if (m_RootCompiler->fgPgoSource == ICorJitInfo::PgoSource::Dynamic)
+        if (m_RootCompiler->fgHaveTrustedProfileData())
         {
-            // For now we only "trust" dynamic profiles.
             multiplier *= (1.0 - profileTrustCoef) + min(m_ProfileFrequency, 1.0) * profileScale;
         }
         else
@@ -3384,7 +3383,7 @@ bool ReplayPolicy::FindContext(InlineContext* context)
     // Token and Hash we're looking for.
     mdMethodDef contextToken  = m_RootCompiler->info.compCompHnd->getMethodDefFromMethod(context->GetCallee());
     unsigned    contextHash   = m_RootCompiler->compMethodHash(context->GetCallee());
-    unsigned    contextOffset = (unsigned)context->GetOffset();
+    unsigned    contextOffset = (unsigned)context->GetLocation().GetOffset();
 
     return FindInline(contextToken, contextHash, contextOffset);
 }
@@ -3574,7 +3573,7 @@ bool ReplayPolicy::FindInline(CORINFO_METHOD_HANDLE callee)
     int offset = -1;
     if (m_Offset != BAD_IL_OFFSET)
     {
-        offset = (int)jitGetILoffs(m_Offset);
+        offset = m_Offset;
     }
 
     unsigned calleeOffset = (unsigned)offset;

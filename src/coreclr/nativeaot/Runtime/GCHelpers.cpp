@@ -56,7 +56,7 @@ EXTERN_C REDHAWK_API int64_t __cdecl RhpGetGcTotalMemory()
     return ret;
 }
 
-EXTERN_C REDHAWK_API int32_t __cdecl RhpStartNoGCRegion(int64_t totalSize, Boolean hasLohSize, int64_t lohSize, Boolean disallowFullBlockingGC)
+EXTERN_C REDHAWK_API int32_t __cdecl RhpStartNoGCRegion(int64_t totalSize, UInt32_BOOL hasLohSize, int64_t lohSize, UInt32_BOOL disallowFullBlockingGC)
 {
     Thread *pCurThread = ThreadStore::GetCurrentThread();
     ASSERT(!pCurThread->IsCurrentThreadInCooperativeMode());
@@ -85,11 +85,11 @@ COOP_PINVOKE_HELPER(void, RhSuppressFinalize, (OBJECTREF refObj))
     GCHeapUtilities::GetGCHeap()->SetFinalizationRun(refObj);
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhReRegisterForFinalize, (OBJECTREF refObj))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhReRegisterForFinalize, (OBJECTREF refObj))
 {
     if (!refObj->get_EEType()->HasFinalizer())
-        return Boolean_true;
-    return GCHeapUtilities::GetGCHeap()->RegisterForFinalization(-1, refObj) ? Boolean_true : Boolean_false;
+        FC_RETURN_BOOL(true);
+    FC_RETURN_BOOL(GCHeapUtilities::GetGCHeap()->RegisterForFinalization(-1, refObj));
 }
 
 COOP_PINVOKE_HELPER(int32_t, RhGetMaxGcGeneration, ())
@@ -97,7 +97,7 @@ COOP_PINVOKE_HELPER(int32_t, RhGetMaxGcGeneration, ())
     return GCHeapUtilities::GetGCHeap()->GetMaxGeneration();
 }
 
-COOP_PINVOKE_HELPER(int32_t, RhGetGcCollectionCount, (int32_t generation, Boolean getSpecialGCCount))
+COOP_PINVOKE_HELPER(int32_t, RhGetGcCollectionCount, (int32_t generation, CLR_BOOL getSpecialGCCount))
 {
     return GCHeapUtilities::GetGCHeap()->CollectionCount(generation, getSpecialGCCount);
 }
@@ -117,24 +117,19 @@ COOP_PINVOKE_HELPER(int32_t, RhSetGcLatencyMode, (int32_t newLatencyMode))
     return GCHeapUtilities::GetGCHeap()->SetGcLatencyMode(newLatencyMode);
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhIsServerGc, ())
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhIsServerGc, ())
 {
-    return GCHeapUtilities::IsServerHeap();
+    FC_RETURN_BOOL(GCHeapUtilities::IsServerHeap());
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhRegisterGcCallout, (GcRestrictedCalloutKind eKind, void * pCallout))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhRegisterGcCallout, (GcRestrictedCalloutKind eKind, void * pCallout))
 {
-    return RestrictedCallouts::RegisterGcCallout(eKind, pCallout);
+    FC_RETURN_BOOL(RestrictedCallouts::RegisterGcCallout(eKind, pCallout));
 }
 
 COOP_PINVOKE_HELPER(void, RhUnregisterGcCallout, (GcRestrictedCalloutKind eKind, void * pCallout))
 {
     RestrictedCallouts::UnregisterGcCallout(eKind, pCallout);
-}
-
-COOP_PINVOKE_HELPER(Boolean, RhIsPromoted, (OBJECTREF obj))
-{
-    return GCHeapUtilities::GetGCHeap()->IsPromoted(obj) ? Boolean_true : Boolean_false;
 }
 
 COOP_PINVOKE_HELPER(int32_t, RhGetLohCompactionMode, ())
@@ -167,17 +162,16 @@ COOP_PINVOKE_HELPER(int64_t, RhGetLastGCDuration, (int32_t generation))
     return GCHeapUtilities::GetGCHeap()->GetLastGCDuration(generation);
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhRegisterForFullGCNotification, (int32_t maxGenerationThreshold, int32_t largeObjectHeapThreshold))
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhRegisterForFullGCNotification, (int32_t maxGenerationThreshold, int32_t largeObjectHeapThreshold))
 {
     ASSERT(maxGenerationThreshold >= 1 && maxGenerationThreshold <= 99);
     ASSERT(largeObjectHeapThreshold >= 1 && largeObjectHeapThreshold <= 99);
-    return GCHeapUtilities::GetGCHeap()->RegisterForFullGCNotification(maxGenerationThreshold, largeObjectHeapThreshold)
-        ? Boolean_true : Boolean_false;
+    FC_RETURN_BOOL(GCHeapUtilities::GetGCHeap()->RegisterForFullGCNotification(maxGenerationThreshold, largeObjectHeapThreshold));
 }
 
-COOP_PINVOKE_HELPER(Boolean, RhCancelFullGCNotification, ())
+COOP_PINVOKE_HELPER(FC_BOOL_RET, RhCancelFullGCNotification, ())
 {
-    return GCHeapUtilities::GetGCHeap()->CancelFullGCNotification() ? Boolean_true : Boolean_false;
+    FC_RETURN_BOOL(GCHeapUtilities::GetGCHeap()->CancelFullGCNotification());
 }
 
 COOP_PINVOKE_HELPER(int32_t, RhWaitForFullGCApproach, (int32_t millisecondsTimeout))
@@ -200,8 +194,8 @@ COOP_PINVOKE_HELPER(int32_t, RhWaitForFullGCComplete, (int32_t millisecondsTimeo
 
 COOP_PINVOKE_HELPER(int64_t, RhGetGCSegmentSize, ())
 {
-    size_t first = GCHeapUtilities::GetGCHeap()->GetValidSegmentSize(Boolean_true);
-    size_t second = GCHeapUtilities::GetGCHeap()->GetValidSegmentSize(Boolean_false);
+    size_t first = GCHeapUtilities::GetGCHeap()->GetValidSegmentSize(true);
+    size_t second = GCHeapUtilities::GetGCHeap()->GetValidSegmentSize(false);
 
     return (first > second) ? first : second;
 }
@@ -222,13 +216,6 @@ struct RH_GC_GENERATION_INFO
     uint64_t fragmentationAfter;
 };
 
-#if defined(TARGET_X86) && !defined(TARGET_UNIX)
-#include "pshpack4.h"
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable:4121) // alignment of a member was sensitive to packing
-#endif
-#endif
 struct RH_GH_MEMORY_INFO
 {
 public:
@@ -254,12 +241,6 @@ public:
     uint64_t pauseDuration0;
     uint64_t pauseDuration1;
 };
-#if defined(TARGET_X86) && !defined(TARGET_UNIX)
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-#include "poppack.h"
-#endif
 
 COOP_PINVOKE_HELPER(void, RhGetMemoryInfo, (RH_GH_MEMORY_INFO* pData, int kind))
 {
@@ -329,9 +310,9 @@ EXTERN_C REDHAWK_API int64_t __cdecl RhGetTotalAllocatedBytesPrecise()
     return allocated;
 }
 
-extern Object* GcAllocInternal(EEType* pEEType, uint32_t uFlags, uintptr_t cbSize, Thread* pThread);
+extern Object* GcAllocInternal(MethodTable* pEEType, uint32_t uFlags, uintptr_t cbSize, Thread* pThread);
 
-EXTERN_C REDHAWK_API void RhAllocateNewArray(EEType* pArrayEEType, uint32_t numElements, uint32_t flags, Array** pResult)
+EXTERN_C REDHAWK_API void RhAllocateNewArray(MethodTable* pArrayEEType, uint32_t numElements, uint32_t flags, Array** pResult)
 {
     Thread* pThread = ThreadStore::GetCurrentThread();
 
@@ -345,7 +326,7 @@ EXTERN_C REDHAWK_API void RhAllocateNewArray(EEType* pArrayEEType, uint32_t numE
     pThread->EnablePreemptiveMode();
 }
 
-EXTERN_C REDHAWK_API void RhAllocateNewObject(EEType* pEEType, uint32_t flags, Object** pResult)
+EXTERN_C REDHAWK_API void RhAllocateNewObject(MethodTable* pEEType, uint32_t flags, Object** pResult)
 {
     Thread* pThread = ThreadStore::GetCurrentThread();
 

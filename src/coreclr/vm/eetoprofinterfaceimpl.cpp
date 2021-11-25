@@ -102,8 +102,32 @@ enum ClrToProfEntrypointFlags
     kEE2PNoTrigger                      = 0x00000004,
 };
 
-#define ASSERT_EVAC_COUNTER_NONZERO()   \
-    _ASSERTE(m_pProfilerInfo->dwProfilerEvacuationCounter.Load() > 0)
+EvacuationCounterHolder::EvacuationCounterHolder(ProfilerInfo *pProfilerInfo) :
+    m_pProfilerInfo(pProfilerInfo),
+    m_pThread(GetThreadNULLOk())
+{
+    _ASSERTE(m_pProfilerInfo != NULL);
+    if (m_pThread == NULL)
+    {
+        return;
+    }
+
+    m_pThread->IncProfilerEvacuationCounter(m_pProfilerInfo->slot);
+}
+
+EvacuationCounterHolder::~EvacuationCounterHolder()
+{
+    if (m_pThread == NULL)
+    {
+        return;
+    }
+
+    m_pThread->DecProfilerEvacuationCounter(m_pProfilerInfo->slot);
+}
+
+#define ASSERT_EVAC_COUNTER_NONZERO()                                                       \
+    _ASSERTE((GetThreadNULLOk() == NULL) ||                                                 \
+             (GetThread()->GetProfilerEvacuationCounter(m_pProfilerInfo->slot) > 0))
 
 #define CHECK_PROFILER_STATUS(ee2pFlags)                                                \
     /* If one of these asserts fires, perhaps you forgot to use                     */  \
@@ -636,9 +660,6 @@ HRESULT EEToProfInterfaceImpl::CreateProfiler(
         MODE_PREEMPTIVE;
     }
     CONTRACTL_END;
-
-    // Always called before Thread created.
-    _ASSERTE(GetThreadNULLOk() == NULL);
 
     // Try and CoCreate the registered profiler
     ReleaseHolder<ICorProfilerCallback2> pCallback2;
@@ -2771,10 +2792,6 @@ HRESULT EEToProfInterfaceImpl::InitializeForAttach(void * pvClientData, UINT cbC
 
     _ASSERTE(m_pProfToEE != NULL);
 
-    // Attach initialization occurs on the AttachThread, which does not have an EEThread
-    // object
-    _ASSERTE(GetThreadNULLOk() == NULL);
-
     // Should only be called on profilers that support ICorProfilerCallback3
     _ASSERTE(m_pCallback3 != NULL);
 
@@ -2825,10 +2842,6 @@ HRESULT EEToProfInterfaceImpl::ProfilerAttachComplete()
     CLR_TO_PROFILER_ENTRYPOINT((LF_CORPROF,
                                 LL_INFO10,
                                 "**PROF: Calling profiler's ProfilerAttachComplete() method.\n"));
-
-    // Attach initialization occurs on the AttachThread, which does not have an EEThread
-    // object
-    _ASSERTE(GetThreadNULLOk() == NULL);
 
     // Should only be called on profilers that support ICorProfilerCallback3
     _ASSERTE(m_pCallback3 != NULL);
@@ -6042,7 +6055,7 @@ HRESULT EEToProfInterfaceImpl::EventPipeProviderCreated(EventPipeProvider *provi
 #endif // FEATURE_PERFTRACING
 }
 
-HRESULT EEToProfInterfaceImpl::LoadAsNotficationOnly(BOOL *pbNotificationOnly)
+HRESULT EEToProfInterfaceImpl::LoadAsNotificationOnly(BOOL *pbNotificationOnly)
 {
     CONTRACTL
     {
@@ -6058,7 +6071,7 @@ HRESULT EEToProfInterfaceImpl::LoadAsNotficationOnly(BOOL *pbNotificationOnly)
 
     LOG((LF_CORPROF,
         LL_INFO1000,
-        "**PROF: LoadAsNotficationOnly.\n"));
+        "**PROF: LoadAsNotificationOnly.\n"));
 
     if (m_pCallback11 == NULL)
     {
@@ -6066,7 +6079,7 @@ HRESULT EEToProfInterfaceImpl::LoadAsNotficationOnly(BOOL *pbNotificationOnly)
         return S_OK;
     }
 
-    return m_pCallback11->LoadAsNotficationOnly(pbNotificationOnly);
+    return m_pCallback11->LoadAsNotificationOnly(pbNotificationOnly);
 }
 
 #endif // PROFILING_SUPPORTED

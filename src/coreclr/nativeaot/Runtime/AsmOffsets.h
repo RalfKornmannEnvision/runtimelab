@@ -34,10 +34,10 @@ ASM_CONST(     2,     2, STRING_COMPONENT_SIZE)
 ASM_CONST(     E,    16, STRING_BASE_SIZE)
 ASM_CONST(3FFFFFDF,3FFFFFDF,MAX_STRING_LENGTH)
 
-ASM_OFFSET(    0,     0, EEType, m_usComponentSize)
-ASM_OFFSET(    2,     2, EEType, m_usFlags)
-ASM_OFFSET(    4,     4, EEType, m_uBaseSize)
-ASM_OFFSET(   14,    18, EEType, m_VTable)
+ASM_OFFSET(    0,     0, MethodTable, m_usComponentSize)
+ASM_OFFSET(    2,     2, MethodTable, m_usFlags)
+ASM_OFFSET(    4,     4, MethodTable, m_uBaseSize)
+ASM_OFFSET(   14,    18, MethodTable, m_VTable)
 
 ASM_OFFSET(    0,     0, Thread, m_rgbAllocContextBuffer)
 ASM_OFFSET(   28,    38, Thread, m_ThreadStateFlags)
@@ -50,6 +50,9 @@ ASM_OFFSET(    0,    78, Thread, m_uHijackedReturnValueFlags)
 #endif
 ASM_OFFSET(   48,    80, Thread, m_pExInfoStackHead)
 ASM_OFFSET(   4c,    88, Thread, m_threadAbortException)
+
+ASM_OFFSET(   50,    90, Thread, m_pThreadLocalModuleStatics)
+ASM_OFFSET(   54,    98, Thread, m_numThreadLocalModuleStatics)
 
 ASM_SIZEOF(   14,    20, EHEnum)
 

@@ -87,7 +87,7 @@ if (GEN_SHARED_LIB)
         ${NATIVECOMPRESSION_SOURCES}
         System.IO.Compression.Native.def
         # This will add versioning to the library
-        ${CMAKE_REPO_ROOT}/artifacts/obj/NativeVersion.rc
+        ${VERSION_FILE_RC_PATH}
     )
 endif()
 
@@ -99,6 +99,21 @@ add_library(System.IO.Compression.Native-Static
     STATIC
     ${NATIVECOMPRESSION_SOURCES}
 )
+
+if(STATIC_LIBS_ONLY)
+    add_library(System.IO.Compression.Native.Aot
+        STATIC
+        ${NATIVECOMPRESSION_SOURCES}
+    )
+    target_compile_options(System.IO.Compression.Native.Aot PRIVATE /guard:cf-)
+    target_compile_options(System.IO.Compression.Native.Aot PRIVATE /GL-)
+
+    add_library(System.IO.Compression.Native.Aot.GuardCF
+        STATIC
+        ${NATIVECOMPRESSION_SOURCES}
+    )
+    target_compile_options(System.IO.Compression.Native.Aot.GuardCF PRIVATE /GL-)
+endif()
 
 # Allow specification of arguments that should be passed to the linker
 if (GEN_SHARED_LIB)
@@ -112,6 +127,11 @@ if (GEN_SHARED_LIB)
 endif()
 target_link_libraries(System.IO.Compression.Native-Static ${__LinkLibraries})
 
+if(STATIC_LIBS_ONLY)
+    target_link_libraries(System.IO.Compression.Native.Aot ${__LinkLibraries})
+    target_link_libraries(System.IO.Compression.Native.Aot.GuardCF ${__LinkLibraries})
+endif()
+
 if (GEN_SHARED_LIB)
     GENERATE_EXPORT_HEADER( System.IO.Compression.Native
          BASE_NAME System.IO.Compression.Native
@@ -124,4 +144,9 @@ if (GEN_SHARED_LIB)
     install (FILES $<TARGET_PDB_FILE:System.IO.Compression.Native> DESTINATION .)
 endif()
 
-install_static_library(System.IO.Compression.Native-Static ${STATIC_LIB_DESTINATION} System.IO.Compression.Native-Static)
+install (TARGETS System.IO.Compression.Native-Static DESTINATION ${STATIC_LIB_DESTINATION} COMPONENT libs)
+
+if(STATIC_LIBS_ONLY)
+    install_static_library(System.IO.Compression.Native.Aot aotsdk nativeaot)
+    install_static_library(System.IO.Compression.Native.Aot.GuardCF aotsdk nativeaot)
+endif()

@@ -1,7 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#include "../../AnyOS/entrypoints.h"
+#include <common/entrypoints.h>
 
 // Include System.Security.Cryptography.Native.Apple headers
 #include "pal_digest.h"
@@ -78,6 +78,7 @@ static const Entry s_cryptoAppleNative[] =
     DllImportEntry(AppleCryptoNative_SecKeyCopyExternalRepresentation)
     DllImportEntry(AppleCryptoNative_SecKeyCopyPublicKey)
     DllImportEntry(AppleCryptoNative_SslCreateContext)
+    DllImportEntry(AppleCryptoNative_SslSetConnection)
     DllImportEntry(AppleCryptoNative_SslSetAcceptClientCert)
     DllImportEntry(AppleCryptoNative_SslSetMinProtocolVersion)
     DllImportEntry(AppleCryptoNative_SslSetMaxProtocolVersion)
@@ -130,5 +131,5 @@ EXTERN_C const void* CryptoAppleResolveDllImport(const char* name);
 
 EXTERN_C const void* CryptoAppleResolveDllImport(const char* name)
 {
-    return ResolveDllImport(s_cryptoAppleNative, lengthof(s_cryptoAppleNative), name);
+    return minipal_resolve_dllimport(s_cryptoAppleNative, lengthof(s_cryptoAppleNative), name);
 }

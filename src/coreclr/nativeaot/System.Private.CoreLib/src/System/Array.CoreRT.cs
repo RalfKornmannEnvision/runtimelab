@@ -16,7 +16,7 @@ using Internal.Runtime.Augments;
 using Internal.Runtime.CompilerServices;
 using Internal.Reflection.Core.NonPortable;
 using Internal.IntrinsicSupport;
-using EEType = Internal.Runtime.EEType;
+using MethodTable = Internal.Runtime.MethodTable;
 using EETypeElementType = Internal.Runtime.EETypeElementType;
 
 namespace System
@@ -55,10 +55,10 @@ namespace System
             }
         }
 
-        // This is the classlib-provided "get array eetype" function that will be invoked whenever the runtime
+        // This is the classlib-provided "get array MethodTable" function that will be invoked whenever the runtime
         // needs to know the base type of an array.
         [RuntimeExport("GetSystemArrayEEType")]
-        private static unsafe EEType* GetSystemArrayEEType()
+        private static unsafe MethodTable* GetSystemArrayEEType()
         {
             return EETypePtr.EETypePtrOf<Array>().ToPointer();
         }
@@ -200,11 +200,11 @@ namespace System
 
         private static void ValidateElementType(Type elementType)
         {
-            if (!elementType.IsRuntimeImplemented())
+            if (elementType is not RuntimeType)
                 throw new ArgumentException(SR.Arg_MustBeType, nameof(elementType));
             while (elementType.IsArray)
             {
-                elementType = elementType.GetElementType();
+                elementType = elementType.GetElementType()!;
             }
             if (elementType.IsByRef || elementType.IsByRefLike)
                 throw new NotSupportedException(SR.NotSupported_ByRefLikeArray);
@@ -433,7 +433,7 @@ namespace System
                 attemptCopy = attemptCopy || RuntimeImports.AreTypesAssignable(destinationElementEEType, sourceElementEEType);
 
                 // If either array is an interface array, we allow the attempt to copy even if the other element type does not statically implement the interface.
-                // We don't have an "IsInterface" property in EETypePtr so we instead check for a null BaseType. The only the other EEType with a null BaseType is
+                // We don't have an "IsInterface" property in EETypePtr so we instead check for a null BaseType. The only the other MethodTable with a null BaseType is
                 // System.Object but if that were the case, we would already have passed one of the AreTypesAssignable checks above.
                 attemptCopy = attemptCopy || sourceElementEEType.BaseType.IsNull;
                 attemptCopy = attemptCopy || destinationElementEEType.BaseType.IsNull;
@@ -443,15 +443,15 @@ namespace System
             }
 
             bool reverseCopy = ((object)sourceArray == (object)destinationArray) && (sourceIndex < destinationIndex);
-            ref object refDestinationArray = ref Unsafe.As<byte, object>(ref MemoryMarshal.GetArrayDataReference(destinationArray));
-            ref object refSourceArray = ref Unsafe.As<byte, object>(ref MemoryMarshal.GetArrayDataReference(sourceArray));
+            ref object? refDestinationArray = ref Unsafe.As<byte, object?>(ref MemoryMarshal.GetArrayDataReference(destinationArray));
+            ref object? refSourceArray = ref Unsafe.As<byte, object?>(ref MemoryMarshal.GetArrayDataReference(sourceArray));
             if (reverseCopy)
             {
                 sourceIndex += length - 1;
                 destinationIndex += length - 1;
                 for (int i = 0; i < length; i++)
                 {
-                    object value = Unsafe.Add(ref refSourceArray, sourceIndex - i);
+                    object? value = Unsafe.Add(ref refSourceArray, sourceIndex - i);
                     if (mustCastCheckEachElement && value != null && RuntimeImports.IsInstanceOf(destinationElementEEType, value) == null)
                         throw new InvalidCastException(SR.InvalidCast_DownCastArrayElement);
                     Unsafe.Add(ref refDestinationArray, destinationIndex - i) = value;
@@ -461,7 +461,7 @@ namespace System
             {
                 for (int i = 0; i < length; i++)
                 {
-                    object value = Unsafe.Add(ref refSourceArray, sourceIndex + i);
+                    object? value = Unsafe.Add(ref refSourceArray, sourceIndex + i);
                     if (mustCastCheckEachElement && value != null && RuntimeImports.IsInstanceOf(destinationElementEEType, value) == null)
                         throw new InvalidCastException(SR.InvalidCast_DownCastArrayElement);
                     Unsafe.Add(ref refDestinationArray, destinationIndex + i) = value;
@@ -553,7 +553,7 @@ namespace System
             bool reverseCopy = ((object)sourceArray == (object)destinationArray) && (sourceIndex < destinationIndex);
 
             // Copy scenario: ValueType-array to value-type array with embedded gc-refs.
-            object[] boxedElements = null;
+            object[]? boxedElements = null;
             if (reliable)
             {
                 boxedElements = new object[length];
@@ -580,7 +580,7 @@ namespace System
                     }
 
                     object boxedValue = RuntimeImports.RhBox(sourceElementEEType, ref *pSourceElement);
-                    if (reliable)
+                    if (boxedElements != null)
                         boxedElements[i] = boxedValue;
                     else
                         RuntimeImports.RhUnbox(boxedValue, ref *pDestinationElement, sourceElementEEType);
@@ -593,7 +593,7 @@ namespace System
                 }
             }
 
-            if (reliable)
+            if (boxedElements != null)
             {
                 fixed (byte* pDstArray = &MemoryMarshal.GetArrayDataReference(destinationArray))
                 {
@@ -611,7 +611,7 @@ namespace System
         //
         // Array.CopyImpl case: Value-type array without embedded gc-references.
         //
-        internal static unsafe void CopyImplValueTypeArrayNoInnerGcRefs(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length)
+        private static unsafe void CopyImplValueTypeArrayNoInnerGcRefs(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length)
         {
             Debug.Assert((sourceArray.ElementEEType.IsValueType && !sourceArray.ElementEEType.HasPointers) ||
                 sourceArray.ElementEEType.IsPointer);
@@ -964,6 +964,7 @@ namespace System
             // GC.KeepAlive(array) not required. pMT kept alive via `ptr`
         }
 
+        [Intrinsic]
         public int GetLength(int dimension)
         {
             int length = GetUpperBound(dimension) + 1;
@@ -1023,6 +1024,7 @@ namespace System
             return ret;
         }
 
+        [Intrinsic]
         public int GetLowerBound(int dimension)
         {
             if (!IsSzArray)
@@ -1039,6 +1041,7 @@ namespace System
             return 0;
         }
 
+        [Intrinsic]
         public int GetUpperBound(int dimension)
         {
             if (!IsSzArray)
@@ -1144,7 +1147,7 @@ namespace System
                 {
                     throw new InvalidCastException(SR.InvalidCast_StoreArrayElement);
                 }
-                Unsafe.As<byte, object>(ref element) = value;
+                Unsafe.As<byte, object?>(ref element) = value;
             }
         }
 

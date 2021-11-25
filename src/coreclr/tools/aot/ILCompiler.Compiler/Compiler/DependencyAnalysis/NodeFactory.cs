@@ -113,9 +113,9 @@ namespace ILCompiler.DependencyAnalysis
         }
 
         /// <summary>
-        /// Return true if the type is not permitted by the rules of the runtime to have an EEType.
+        /// Return true if the type is not permitted by the rules of the runtime to have an MethodTable.
         /// The implementation here is not intended to be complete, but represents many conditions
-        /// which make a type ineligible to be an EEType. (This function is intended for use in assertions only)
+        /// which make a type ineligible to be an MethodTable. (This function is intended for use in assertions only)
         /// </summary>
         private bool TypeCannotHaveEEType(TypeDesc type)
         {
@@ -338,11 +338,6 @@ namespace ILCompiler.DependencyAnalysis
 
             _genericReadyToRunHelpersFromDict = new NodeCache<ReadyToRunGenericHelperKey, ISymbolNode>(CreateGenericLookupFromDictionaryNode);
             _genericReadyToRunHelpersFromType = new NodeCache<ReadyToRunGenericHelperKey, ISymbolNode>(CreateGenericLookupFromTypeNode);
-
-            _indirectionNodes = new NodeCache<ISortableSymbolNode, ISymbolNode>(indirectedNode =>
-            {
-                return new IndirectionNode(Target, indirectedNode, 0);                
-            });
 
             _frozenStringNodes = new NodeCache<string, FrozenStringNode>((string data) =>
             {
@@ -988,20 +983,6 @@ namespace ILCompiler.DependencyAnalysis
             return _genericReadyToRunHelpersFromType.GetOrAdd(new ReadyToRunGenericHelperKey(id, target, dictionaryOwner));
         }
 
-        private NodeCache<ISortableSymbolNode, ISymbolNode> _indirectionNodes;
-
-        public ISymbolNode Indirection(ISortableSymbolNode symbol)
-        {
-            if (symbol.RepresentsIndirectionCell)
-            {
-                return symbol;
-            }
-            else
-            {
-                return _indirectionNodes.GetOrAdd(symbol);
-            }
-        }
-
         private NodeCache<MetadataType, TypeMetadataNode> _typesWithMetadata;
 
         internal TypeMetadataNode TypeMetadata(MetadataType type)
@@ -1135,6 +1116,8 @@ namespace ILCompiler.DependencyAnalysis
             "__FrozenSegmentRegionEnd",
             new SortableDependencyNode.EmbeddedObjectNodeComparer(new CompilerComparer()));
 
+        internal ModuleInitializerListNode ModuleInitializerList = new ModuleInitializerListNode();
+
         public InterfaceDispatchCellSectionNode InterfaceDispatchCellSection { get; }
 
         public ReadyToRunHeaderNode ReadyToRunHeader;
@@ -1157,6 +1140,7 @@ namespace ILCompiler.DependencyAnalysis
             graph.AddRoot(DispatchMapTable, "DispatchMapTable is always generated");
             graph.AddRoot(FrozenSegmentRegion, "FrozenSegmentRegion is always generated");
             graph.AddRoot(InterfaceDispatchCellSection, "Interface dispatch cell section is always generated");
+            graph.AddRoot(ModuleInitializerList, "Module initializer list is always generated");
 
             ReadyToRunHeader.Add(ReadyToRunSectionType.GCStaticRegion, GCStaticsRegion, GCStaticsRegion.StartSymbol, GCStaticsRegion.EndSymbol);
             ReadyToRunHeader.Add(ReadyToRunSectionType.ThreadStaticRegion, ThreadStaticsRegion, ThreadStaticsRegion.StartSymbol, ThreadStaticsRegion.EndSymbol);
@@ -1164,6 +1148,7 @@ namespace ILCompiler.DependencyAnalysis
             ReadyToRunHeader.Add(ReadyToRunSectionType.TypeManagerIndirection, TypeManagerIndirection, TypeManagerIndirection);
             ReadyToRunHeader.Add(ReadyToRunSectionType.InterfaceDispatchTable, DispatchMapTable, DispatchMapTable.StartSymbol);
             ReadyToRunHeader.Add(ReadyToRunSectionType.FrozenObjectRegion, FrozenSegmentRegion, FrozenSegmentRegion.StartSymbol, FrozenSegmentRegion.EndSymbol);
+            ReadyToRunHeader.Add(ReadyToRunSectionType.ModuleInitializerList, ModuleInitializerList, ModuleInitializerList, ModuleInitializerList.EndSymbol);
 
             var commonFixupsTableNode = new ExternalReferencesTableNode("CommonFixupsTable", this);
             InteropStubManager.AddToReadyToRunHeader(ReadyToRunHeader, this, commonFixupsTableNode);

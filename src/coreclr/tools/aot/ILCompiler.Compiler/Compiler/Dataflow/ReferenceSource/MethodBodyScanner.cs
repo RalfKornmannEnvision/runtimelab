@@ -9,6 +9,8 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
 
+#nullable enable
+
 namespace Mono.Linker.Dataflow
 {
 	/// <summary>
@@ -16,14 +18,14 @@ namespace Mono.Linker.Dataflow
 	/// </summary>
 	readonly struct StackSlot
 	{
-		public ValueNode Value { get; }
+		public ValueNode? Value { get; }
 
 		/// <summary>
 		/// True if the value is on the stack as a byref
 		/// </summary>
 		public bool IsByRef { get; }
 
-		public StackSlot (ValueNode value, bool isByRef = false)
+		public StackSlot (ValueNode? value, bool isByRef = false)
 		{
 			Value = value;
 			IsByRef = isByRef;
@@ -39,7 +41,7 @@ namespace Mono.Linker.Dataflow
 			this._context = context;
 		}
 
-		internal ValueNode MethodReturnValue { private set; get; }
+		internal ValueNode? MethodReturnValue { private set; get; }
 
 		protected virtual void WarnAboutInvalidILInMethod (MethodBody method, int ilOffset)
 		{
@@ -120,7 +122,7 @@ namespace Mono.Linker.Dataflow
 			return new Stack<StackSlot> (newStack);
 		}
 
-		private static void ClearStack (ref Stack<StackSlot> stack)
+		private static void ClearStack (ref Stack<StackSlot>? stack)
 		{
 			stack = null;
 		}
@@ -175,10 +177,11 @@ namespace Mono.Linker.Dataflow
 
 		private static void StoreMethodLocalValue<KeyType> (
 			Dictionary<KeyType, ValueBasicBlockPair> valueCollection,
-			ValueNode valueToStore,
+			ValueNode? valueToStore,
 			KeyType collectionKey,
 			int curBasicBlock,
 			int? maxTrackedValues = null)
+			where KeyType : notnull
 		{
 			ValueBasicBlockPair newValue = new ValueBasicBlockPair { BasicBlockIndex = curBasicBlock };
 
@@ -209,7 +212,7 @@ namespace Mono.Linker.Dataflow
 			Dictionary<VariableDefinition, ValueBasicBlockPair> locals = new Dictionary<VariableDefinition, ValueBasicBlockPair> (methodBody.Variables.Count);
 
 			Dictionary<int, Stack<StackSlot>> knownStacks = new Dictionary<int, Stack<StackSlot>> ();
-			Stack<StackSlot> currentStack = new Stack<StackSlot> (methodBody.MaxStackSize);
+			Stack<StackSlot>? currentStack = new Stack<StackSlot> (methodBody.MaxStackSize);
 
 			ScanExceptionInformation (knownStacks, methodBody);
 
@@ -526,13 +529,13 @@ namespace Mono.Linker.Dataflow
 						}
 
 						// Pop arguments
-						PopUnknown (currentStack, signature.Parameters.Count, methodBody, operation.Offset);
+						if (signature.Parameters.Count > 0)
+							PopUnknown (currentStack, signature.Parameters.Count, methodBody, operation.Offset);
 
 						// Pop function pointer
 						PopUnknown (currentStack, 1, methodBody, operation.Offset);
 
-						// Push return value
-						if (signature.ReturnType.MetadataType != MetadataType.Void)
+						if (GetReturnTypeWithoutModifiers (signature.ReturnType).MetadataType != MetadataType.Void)
 							PushUnknown (currentStack);
 					}
 					break;
@@ -567,7 +570,9 @@ namespace Mono.Linker.Dataflow
 					break;
 
 				case Code.Ret: {
-						bool hasReturnValue = methodBody.Method.ReturnType.MetadataType != MetadataType.Void;
+
+						bool hasReturnValue = GetReturnTypeWithoutModifiers (methodBody.Method.ReturnType).MetadataType != MetadataType.Void;
+
 						if (currentStack.Count != (hasReturnValue ? 1 : 0)) {
 							WarnAboutInvalidILInMethod (methodBody, operation.Offset);
 						}
@@ -789,7 +794,7 @@ namespace Mono.Linker.Dataflow
 
 			bool isByRef = code == Code.Ldflda || code == Code.Ldsflda;
 
-			FieldDefinition field = _context.TryResolve (operation.Operand as FieldReference);
+			FieldDefinition? field = _context.TryResolve ((FieldReference) operation.Operand);
 			if (field != null) {
 				StackSlot slot = new StackSlot (GetFieldValue (thisMethod, field), isByRef);
 				currentStack.Push (slot);
@@ -799,11 +804,11 @@ namespace Mono.Linker.Dataflow
 			PushUnknown (currentStack);
 		}
 
-		protected virtual void HandleStoreField (MethodDefinition method, FieldDefinition field, Instruction operation, ValueNode valueToStore)
+		protected virtual void HandleStoreField (MethodDefinition method, FieldDefinition field, Instruction operation, ValueNode? valueToStore)
 		{
 		}
 
-		protected virtual void HandleStoreParameter (MethodDefinition method, int index, Instruction operation, ValueNode valueToStore)
+		protected virtual void HandleStoreParameter (MethodDefinition method, int index, Instruction operation, ValueNode? valueToStore)
 		{
 		}
 
@@ -817,7 +822,7 @@ namespace Mono.Linker.Dataflow
 			if (operation.OpCode.Code == Code.Stfld)
 				PopUnknown (currentStack, 1, methodBody, operation.Offset);
 
-			FieldDefinition field = _context.TryResolve (operation.Operand as FieldReference);
+			FieldDefinition? field = _context.TryResolve ((FieldReference) operation.Operand);
 			if (field != null) {
 				HandleStoreField (thisMethod, field, operation, valueToStoreSlot.Value);
 			}
@@ -839,7 +844,7 @@ namespace Mono.Linker.Dataflow
 			MethodReference methodCalled,
 			MethodBody containingMethodBody,
 			bool isNewObj, int ilOffset,
-			out ValueNode newObjValue)
+			out ValueNode? newObjValue)
 		{
 			newObjValue = null;
 
@@ -872,11 +877,11 @@ namespace Mono.Linker.Dataflow
 
 			bool isNewObj = operation.OpCode.Code == Code.Newobj;
 
-			ValueNode newObjValue;
+			ValueNode? newObjValue;
 			ValueNodeList methodParams = PopCallArguments (currentStack, calledMethod, callingMethodBody, isNewObj,
 														   operation.Offset, out newObjValue);
 
-			ValueNode methodReturnValue;
+			ValueNode? methodReturnValue;
 			bool handledFunction = HandleCall (
 				callingMethodBody,
 				calledMethod,
@@ -892,7 +897,7 @@ namespace Mono.Linker.Dataflow
 					else
 						methodReturnValue = newObjValue;
 				} else {
-					if (calledMethod.ReturnType.MetadataType != MetadataType.Void) {
+					if (GetReturnTypeWithoutModifiers (calledMethod.ReturnType).MetadataType != MetadataType.Void) {
 						methodReturnValue = UnknownValue.Instance;
 					}
 				}
@@ -908,10 +913,18 @@ namespace Mono.Linker.Dataflow
 			}
 		}
 
+		protected static TypeReference GetReturnTypeWithoutModifiers (TypeReference returnType)
+		{
+			while (returnType is IModifierType) {
+				returnType = ((IModifierType) returnType).ElementType;
+			}
+			return returnType;
+		}
+
 		// Array types that are dynamically accessed should resolve to System.Array instead of its element type - which is what Cecil resolves to.
 		// Any data flow annotations placed on a type parameter which receives an array type apply to the array itself. None of the members in its
 		// element type should be marked.
-		public TypeDefinition ResolveToTypeDefinition (TypeReference typeReference)
+		public TypeDefinition? ResolveToTypeDefinition (TypeReference typeReference)
 		{
 			if (typeReference is ArrayType)
 				return BCL.FindPredefinedType ("System", "Array", _context);
@@ -924,7 +937,7 @@ namespace Mono.Linker.Dataflow
 			MethodReference calledMethod,
 			Instruction operation,
 			ValueNodeList methodParams,
-			out ValueNode methodReturnValue);
+			out ValueNode? methodReturnValue);
 
 		// Limit tracking array values to 32 values for performance reasons. There are many arrays much longer than 32 elements in .NET, but the interesting ones for the linker are nearly always less than 32 elements.
 		private const int MaxTrackedArrayValues = 32;

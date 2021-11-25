@@ -903,13 +903,20 @@ namespace Internal.JitInterface
             return CorInfoHelpFunc.CORINFO_HELP_NEWARR_1_VC;
         }
 
-        private IMethodNode GetMethodEntrypoint(MethodDesc method)
+        private IMethodNode GetMethodEntrypoint(CORINFO_MODULE_STRUCT_* pScope, MethodDesc method)
         {
             bool isUnboxingThunk = method.IsUnboxingThunk();
             if (isUnboxingThunk)
             {
                 method = method.GetUnboxedMethod();
             }
+
+            if (method.HasInstantiation || method.OwningType.HasInstantiation)
+            {
+                MethodIL methodIL = (MethodIL)HandleToObject((IntPtr)pScope);
+                _compilation.DetectGenericCycles(methodIL.OwningMethod, method);
+            }
+
             return _compilation.NodeFactory.MethodEntrypoint(method, isUnboxingThunk);
         }
 
@@ -961,6 +968,7 @@ namespace Internal.JitInterface
             bool resolvedConstraint = false;
             bool forceUseRuntimeLookup = false;
             bool targetIsFatFunctionPointer = false;
+            bool useFatCallTransform = false;
 
             MethodDesc methodAfterConstraintResolution = method;
             if (constrainedType == null)
@@ -1116,6 +1124,52 @@ namespace Internal.JitInterface
                         CreateConstLookupToSymbol(_compilation.NodeFactory.FatFunctionPointer(targetMethod));
                 }
             }
+            else if (directCall && resolvedConstraint && pResult->exactContextNeedsRuntimeLookup)
+            {
+                // We want to do a direct call to a shared method on a valuetype. We need to provide
+                // a generic context, but the JitInterface doesn't provide a way for us to do it from here.
+                // So we do the next best thing and ask RyuJIT to look up a fat pointer.
+
+                pResult->kind = CORINFO_CALL_KIND.CORINFO_CALL_CODE_POINTER;
+                pResult->codePointerOrStubLookup.constLookup.accessType = InfoAccessType.IAT_VALUE;
+                pResult->nullInstanceCheck = true;
+
+                // We have the canonical version of the method - find the runtime determined version.
+                // This is simplified because we know the method is on a valuetype.
+                Debug.Assert(targetMethod.OwningType.IsValueType);
+                TypeDesc runtimeDeterminedConstrainedType = (TypeDesc)GetRuntimeDeterminedObjectForToken(ref *pConstrainedResolvedToken);
+
+                if (forceUseRuntimeLookup)
+                {
+                    // The below logic would incorrectly resolve the lookup into the first match we found,
+                    // but there was a compile-time ambiguity due to shared code. The correct fix should
+                    // use the ConstrainedMethodUseLookupResult dictionary entry so that the exact
+                    // dispatch can be computed with the help of the generic dictionary.
+                    // We fail the compilation here to avoid bad codegen. This is not actually an invalid program.
+                    // https://github.com/dotnet/runtimelab/issues/1431
+                    ThrowHelper.ThrowInvalidProgramException();
+                }
+
+                MethodDesc targetOfLookup;
+                if (runtimeDeterminedConstrainedType.IsRuntimeDeterminedType)
+                    targetOfLookup = _compilation.TypeSystemContext.GetMethodForRuntimeDeterminedType(targetMethod.GetTypicalMethodDefinition(), (RuntimeDeterminedType)runtimeDeterminedConstrainedType);
+                else
+                    targetOfLookup = _compilation.TypeSystemContext.GetMethodForInstantiatedType(targetMethod.GetTypicalMethodDefinition(), (InstantiatedType)runtimeDeterminedConstrainedType);
+                if (targetOfLookup.HasInstantiation)
+                {
+                    var methodToGetInstantiation = (MethodDesc)GetRuntimeDeterminedObjectForToken(ref pResolvedToken);
+                    targetOfLookup = targetOfLookup.MakeInstantiatedMethod(methodToGetInstantiation.Instantiation);
+                }
+                Debug.Assert(targetOfLookup.GetCanonMethodTarget(CanonicalFormKind.Specific) == targetMethod.GetCanonMethodTarget(CanonicalFormKind.Specific));
+
+                ComputeLookup(ref pResolvedToken,
+                    targetOfLookup,
+                    ReadyToRunHelperId.MethodEntry,
+                    ref pResult->codePointerOrStubLookup);
+
+                targetIsFatFunctionPointer = true;
+                useFatCallTransform = true;
+            }
             else if (directCall)
             {
                 bool referencingArrayAddressMethod = false;
@@ -1165,7 +1219,7 @@ namespace Internal.JitInterface
 
                     Debug.Assert(!forceUseRuntimeLookup);
                     pResult->codePointerOrStubLookup.constLookup = CreateConstLookupToSymbol(
-                        GetMethodEntrypoint(targetMethod)
+                        GetMethodEntrypoint(pResolvedToken.tokenScope, targetMethod)
                         );
                 }
                 else
@@ -1191,7 +1245,7 @@ namespace Internal.JitInterface
                     }
 
                     pResult->codePointerOrStubLookup.constLookup = CreateConstLookupToSymbol(
-                        GetMethodEntrypoint(targetMethod)
+                        GetMethodEntrypoint(pResolvedToken.tokenScope, targetMethod)
                         );
                 }
 
@@ -1205,6 +1259,10 @@ namespace Internal.JitInterface
                 pResult->nullInstanceCheck = true;
 
                 MethodDesc targetOfLookup = _compilation.GetTargetOfGenericVirtualMethodCall((MethodDesc)GetRuntimeDeterminedObjectForToken(ref pResolvedToken));
+
+                _compilation.DetectGenericCycles(
+                    ((MethodILScope)HandleToObject((IntPtr)pResolvedToken.tokenScope)).OwningMethod,
+                    targetOfLookup.GetCanonMethodTarget(CanonicalFormKind.Specific));
 
                 ComputeLookup(ref pResolvedToken,
                     targetOfLookup,
@@ -1315,6 +1373,10 @@ namespace Internal.JitInterface
             targetIsFatFunctionPointer |= (flags & CORINFO_CALLINFO_FLAGS.CORINFO_CALLINFO_CALLVIRT) != 0 && !(pResult->kind == CORINFO_CALL_KIND.CORINFO_CALL);
 
             Get_CORINFO_SIG_INFO(targetMethod, &pResult->sig, targetIsFatFunctionPointer);
+            if (useFatCallTransform)
+            {
+                pResult->sig.flags |= CorInfoSigInfoFlags.CORINFO_SIGFLAG_FAT_CALL;
+            }
 
             if ((flags & CORINFO_CALLINFO_FLAGS.CORINFO_CALLINFO_VERIFICATION) != 0)
             {
@@ -1495,6 +1557,7 @@ namespace Internal.JitInterface
             switch (method.Name)
             {
                 case "EETypePtrOf":
+                case "MethodTableOf":
                     ComputeLookup(ref pResolvedToken, method.Instantiation[0], ReadyToRunHelperId.TypeHandle, ref pResult.lookup);
                     break;
                 case "DefaultConstructorOf":
@@ -1674,6 +1737,10 @@ namespace Internal.JitInterface
         }
 
         private void reportInliningDecision(CORINFO_METHOD_STRUCT_* inlinerHnd, CORINFO_METHOD_STRUCT_* inlineeHnd, CorInfoInline inlineResult, byte* reason)
+        {
+        }
+
+        private void updateEntryPointForTailCall(ref CORINFO_CONST_LOOKUP entryPoint)
         {
         }
 
